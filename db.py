@@ -24,6 +24,9 @@ class PostgresConnectionWrapper:
     def commit(self):
         self.conn.commit()
 
+    def rollback(self):
+        self.conn.rollback()
+
     def close(self):
         self.conn.close()
 
@@ -131,96 +134,6 @@ def init_db():
             PRIMARY KEY (mode, lobby_id, user_id)
         )
     ''')
-
-    # Migration checks (simplified for Postgres/SQLite compatibility)
-    # Note: Column checks are harder in cross-db. 
-    # For now, we assume fresh install on Postgres or manual migration.
-    # On SQLite existing DB, we keep existing logic.
-    
-    if not IS_POSTGRES:
-        # SQLite specific migrations for existing local DB
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if 'level' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 4')
-        if 'is_banned' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0')
-        if 'ban_until' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN ban_until DATETIME')
-        if 'missed_games' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN missed_games INTEGER DEFAULT 0')
-        if 'is_vip' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN is_vip INTEGER DEFAULT 0')
-        if 'vip_until' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN vip_until DATETIME')
-        if 'is_admin' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0')
-        if 'avatar_url' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN avatar_url TEXT')
-        if 'steam_url' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN steam_url TEXT')
-        if 'bio' not in columns:
-            cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
-
-        cursor.execute("PRAGMA table_info(support_tickets)")
-        st_columns = [column[1] for column in cursor.fetchall()]
-        if 'admin_id' not in st_columns:
-            cursor.execute('ALTER TABLE support_tickets ADD COLUMN admin_id INTEGER')
-        
-        cursor.execute("PRAGMA table_info(matches)")
-        m_columns = [column[1] for column in cursor.fetchall()]
-        if 'mode' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN mode TEXT')
-        if 'created_at' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN created_at DATETIME')
-        if 'team1_score' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN team1_score INTEGER DEFAULT 0')
-        if 'team2_score' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN team2_score INTEGER DEFAULT 0')
-        if 'winner_team' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN winner_team INTEGER')
-        if 'veto_status' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN veto_status TEXT')
-        if 'current_veto_turn' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN current_veto_turn INTEGER')
-        if 'map_picked' not in m_columns:
-            cursor.execute('ALTER TABLE matches ADD COLUMN map_picked TEXT')
-
-        cursor.execute('UPDATE users SET level = 4 WHERE elo = 1000')
-
-        cursor.execute("PRAGMA table_info(match_players)")
-        mp_columns = [column[1] for column in cursor.fetchall()]
-        if 'team' not in mp_columns:
-            cursor.execute('ALTER TABLE match_players ADD COLUMN team INTEGER DEFAULT 1')
-    else:
-        # Postgres migrations (ensure columns exist if table exists)
-        # For simplicity, we assume new DB on Render. 
-        # But if we need to add columns, we should use ALTER TABLE IF NOT EXISTS logic or catch errors.
-        try:
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS steam_url TEXT')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 4')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_until TIMESTAMP')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS missed_games INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_until TIMESTAMP')
-            
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team1_score INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team2_score INTEGER DEFAULT 0')
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner_team INTEGER')
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS veto_status TEXT')
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS current_veto_turn BIGINT')
-            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS map_picked TEXT')
-            
-            execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS team INTEGER DEFAULT 1')
-            
-            execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS logo_url TEXT')
-            execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS clan_elo INTEGER DEFAULT 1000')
-        except Exception as e:
-            print(f"Migration error (harmless if fresh): {e}")
 
     # Clans
     create_table('''
@@ -349,6 +262,97 @@ def init_db():
             FOREIGN KEY (friend_id) REFERENCES users(user_id)
         )
     ''')
+
+    # Migration checks (moved to end to ensure tables exist)
+    if not IS_POSTGRES:
+        # SQLite specific migrations for existing local DB
+        try:
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in cursor.fetchall()]
+            if 'level' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 4')
+            if 'is_banned' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0')
+            if 'ban_until' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN ban_until DATETIME')
+            if 'missed_games' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN missed_games INTEGER DEFAULT 0')
+            if 'is_vip' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_vip INTEGER DEFAULT 0')
+            if 'vip_until' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN vip_until DATETIME')
+            if 'is_admin' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0')
+            if 'avatar_url' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN avatar_url TEXT')
+            if 'steam_url' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN steam_url TEXT')
+            if 'bio' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
+
+            cursor.execute("PRAGMA table_info(support_tickets)")
+            st_columns = [column[1] for column in cursor.fetchall()]
+            if 'admin_id' not in st_columns:
+                cursor.execute('ALTER TABLE support_tickets ADD COLUMN admin_id INTEGER')
+            
+            cursor.execute("PRAGMA table_info(matches)")
+            m_columns = [column[1] for column in cursor.fetchall()]
+            if 'mode' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN mode TEXT')
+            if 'created_at' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN created_at DATETIME')
+            if 'team1_score' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN team1_score INTEGER DEFAULT 0')
+            if 'team2_score' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN team2_score INTEGER DEFAULT 0')
+            if 'winner_team' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN winner_team INTEGER')
+            if 'veto_status' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN veto_status TEXT')
+            if 'current_veto_turn' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN current_veto_turn INTEGER')
+            if 'map_picked' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN map_picked TEXT')
+
+            cursor.execute('UPDATE users SET level = 4 WHERE elo = 1000')
+
+            cursor.execute("PRAGMA table_info(match_players)")
+            mp_columns = [column[1] for column in cursor.fetchall()]
+            if 'team' not in mp_columns:
+                cursor.execute('ALTER TABLE match_players ADD COLUMN team INTEGER DEFAULT 1')
+        except Exception as e:
+            print(f"SQLite Migration error: {e}")
+    else:
+        # Postgres migrations
+        try:
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS steam_url TEXT')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 4')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_until TIMESTAMP')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS missed_games INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_until TIMESTAMP')
+            
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team1_score INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team2_score INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner_team INTEGER')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS veto_status TEXT')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS current_veto_turn BIGINT')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS map_picked TEXT')
+            
+            execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS team INTEGER DEFAULT 1')
+            
+            execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS logo_url TEXT')
+            execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS clan_elo INTEGER DEFAULT 1000')
+            
+            # Commit migrations immediately to avoid transaction issues
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Postgres Migration error (harmless if fresh): {e}")
         
     conn.commit()
     conn.close()
