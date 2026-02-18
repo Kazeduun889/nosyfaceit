@@ -284,7 +284,7 @@ def friends_list():
         FROM users u
         JOIN friends f ON (f.friend_id = u.user_id AND f.user_id = ?) 
                        OR (f.user_id = u.user_id AND f.friend_id = ?)
-        WHERE f.status = "accepted"
+        WHERE f.status = 'accepted'
     ''', (user_id, user_id)).fetchall()
     
     # Get pending requests (incoming)
@@ -292,7 +292,7 @@ def friends_list():
         SELECT u.user_id, u.nickname, u.avatar_url
         FROM users u
         JOIN friends f ON f.user_id = u.user_id
-        WHERE f.friend_id = ? AND f.status = "pending"
+        WHERE f.friend_id = ? AND f.status = 'pending'
     ''', (user_id,)).fetchall()
     
     conn.close()
@@ -326,7 +326,7 @@ def accept_friend(friend_id):
     
     conn = get_db_connection()
     try:
-        conn.execute('UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?', (friend_id, session['user_id']))
+        conn.execute("UPDATE friends SET status = 'accepted' WHERE user_id = ? AND friend_id = ?", (friend_id, session['user_id']))
         conn.commit()
         flash('Запрос принят!', 'success')
     except Exception as e:
@@ -411,13 +411,17 @@ def create_clan():
             try:
                 cursor = conn.cursor()
                 if db.IS_POSTGRES:
-                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?) RETURNING id', (tag, name, session['user_id']))
+                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (%s, %s, %s) RETURNING id', (tag, name, session['user_id']))
                     clan_id = cursor.fetchone()[0]
                 else:
                     cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?)', (tag, name, session['user_id']))
                     clan_id = cursor.lastrowid
                 
-                cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (?, ?, ?)', (clan_id, session['user_id'], 'owner'))
+                if db.IS_POSTGRES:
+                    cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (%s, %s, %s)', (clan_id, session['user_id'], 'owner'))
+                else:
+                    cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (?, ?, ?)', (clan_id, session['user_id'], 'owner'))
+                
                 conn.commit()
                 flash('Клан успешно создан!', 'success')
                 return redirect(url_for('clan_detail', clan_id=clan_id))
@@ -785,8 +789,12 @@ def join_queue():
             match_id = cursor.lastrowid
         
         # Add players
-        cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, session['user_id']))
-        cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, opponent_id))
+        if db.IS_POSTGRES:
+            cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (%s, %s, 1)", (match_id, session['user_id']))
+            cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (%s, %s, 1)", (match_id, opponent_id))
+        else:
+            cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, session['user_id']))
+            cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, opponent_id))
         
         conn.commit()
         flash('Матч найден!', 'success')

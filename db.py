@@ -521,14 +521,14 @@ def get_match_players(match_id):
 def cancel_match(match_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    execute_query(cursor, 'UPDATE matches SET status = "cancelled" WHERE id = ?', (match_id,))
+    execute_query(cursor, "UPDATE matches SET status = 'cancelled' WHERE id = ?", (match_id,))
     conn.commit()
     conn.close()
 
 def get_pending_match(match_id):
     conn = get_db_connection()
     cursor = conn.cursor()
-    execute_query(cursor, 'SELECT id, mode, status FROM matches WHERE id = ? AND status = "pending"', (match_id,))
+    execute_query(cursor, "SELECT id, mode, status FROM matches WHERE id = ? AND status = 'pending'", (match_id,))
     match = cursor.fetchone()
     conn.close()
     return match
