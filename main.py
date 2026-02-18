@@ -325,11 +325,15 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_db_data = db.get_user(message.from_user.id)
     if user_db_data and len(user_db_data) > 7 and user_db_data[7] == 1:
         # Проверка временного бана
-        ban_until_str = user_db_data[8]
-        if ban_until_str:
-            ban_until = datetime.strptime(ban_until_str, "%Y-%m-%d %H:%M:%S")
+        ban_until_val = user_db_data[8]
+        if ban_until_val:
+            if isinstance(ban_until_val, str):
+                ban_until = datetime.strptime(ban_until_val, "%Y-%m-%d %H:%M:%S")
+            else:
+                ban_until = ban_until_val
+                
             if datetime.now() < ban_until:
-                await message.answer(f"❌ Вы заблокированы до {ban_until_str}.")
+                await message.answer(f"❌ Вы заблокированы до {ban_until}.")
                 return
             else:
                 # Время бана истекло

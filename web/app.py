@@ -17,34 +17,19 @@ except ImportError:
 except Exception as e:
     print(f"Error initializing database: {e}")
 
-# Smart database path detection
-basedir = os.path.abspath(os.path.dirname(__file__))
-db_path_parent = os.path.join(basedir, '..', 'database.db')
-db_path_current = os.path.join(basedir, 'database.db')
-
-if os.path.exists(db_path_parent):
-    DATABASE = db_path_parent
-elif os.path.exists(db_path_current):
-    DATABASE = db_path_current
-else:
-    # Default to parent if neither found (will create new one there if writeable)
-    DATABASE = db_path_parent
-    print(f"Warning: database.db not found. Will attempt to create at {DATABASE}")
-
 # Explicitly set template and static folders relative to this file
+basedir = os.path.abspath(os.path.dirname(__file__))
 template_dir = os.path.join(basedir, 'templates')
 static_dir = os.path.join(basedir, 'static')
 
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
-app.secret_key = 'super-secret-key-change-me'
+app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-change-me')
 
 def get_db_connection():
     try:
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return db.get_db_connection()
     except Exception as e:
-        print(f"Error connecting to database at {DATABASE}: {e}")
+        print(f"Error connecting to database: {e}")
         return None
 
 @app.teardown_appcontext
@@ -194,8 +179,11 @@ def reset_all_data():
             try:
                 conn.execute(f'DELETE FROM {table}')
                 # Reset auto-increment
-                conn.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}'")
-            except sqlite3.OperationalError:
+                if not db.IS_POSTGRES:
+                    try:
+                        conn.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}'")
+                    except Exception: pass
+            except (sqlite3.OperationalError, Exception):
                 pass # Table might not exist yet
                 
         conn.commit()
@@ -422,13 +410,18 @@ def create_clan():
         else:
             try:
                 cursor = conn.cursor()
-                cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?)', (tag, name, session['user_id']))
-                clan_id = cursor.lastrowid
+                if db.IS_POSTGRES:
+                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?) RETURNING id', (tag, name, session['user_id']))
+                    clan_id = cursor.fetchone()[0]
+                else:
+                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?)', (tag, name, session['user_id']))
+                    clan_id = cursor.lastrowid
+                
                 cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (?, ?, ?)', (clan_id, session['user_id'], 'owner'))
                 conn.commit()
                 flash('Клан успешно создан!', 'success')
                 return redirect(url_for('clan_detail', clan_id=clan_id))
-            except sqlite3.IntegrityError:
+            except (sqlite3.IntegrityError, db.IntegrityError):
                 flash('Клан с таким тегом уже существует', 'error')
             except Exception as e:
                 flash(f'Ошибка создания клана: {e}', 'error')
@@ -784,8 +777,12 @@ def join_queue():
         
         # Create match
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
-        match_id = cursor.lastrowid
+        if db.IS_POSTGRES:
+            cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active') RETURNING id")
+            match_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
+            match_id = cursor.lastrowid
         
         # Add players
         cursor.execute("INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, session['user_id']))
@@ -801,7 +798,7 @@ def join_queue():
         try:
             conn.execute('INSERT INTO matchmaking_queue (user_id) VALUES (?)', (session['user_id'],))
             conn.commit()
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, db.IntegrityError):
             pass
             
     conn.close()
