@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto bg-gray-800 rounded-lg p-8 shadow-xl">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
+            <div>
+                <h1 class="text-3xl font-bold text-white">Матч #{{ match.id }}</h1>
+                <p class="text-gray-400">{{ match.created_at }}</p>
+            </div>
+            <div class="text-right">
+                <span class="text-2xl font-bold {{ 'text-green-500' if match.status == 'finished' else 'text-yellow-500' }}">
+                    {{ match.status|upper }}
+                </span>
+                <p class="text-gray-400">{{ match.mode }}</p>
+            </div>
+        </div>
+
+        <!-- Map & Score -->
+        {% if match.status == 'finished' %}
+        <div class="bg-gray-700 rounded-lg p-6 mb-8 text-center relative overflow-hidden">
+            <!-- Background Map Image (Placeholder logic) -->
+            <div class="absolute inset-0 opacity-20 bg-cover bg-center" 
+                 style="background-image: url('{{ url_for('static', filename='maps/' + (match.map_picked|lower or 'default') + '.jpg') }}');"></div>
+            
+            <div class="relative z-10">
+                <h2 class="text-2xl font-bold text-white mb-2">{{ match.map_picked or 'Карта не выбрана' }}</h2>
+                <div class="text-6xl font-black text-white tracking-widest">
+                    <span class="text-blue-400">{{ match.team1_score }}</span> : <span class="text-orange-400">{{ match.team2_score }}</span>
+                </div>
+                <div class="mt-2 text-sm text-gray-300">
+                    Победитель: <span class="{{ 'text-blue-400' if match.winner_team == 1 else 'text-orange-400' }}">
+                        Команда {{ match.winner_team }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Players -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Team 1 -->
+            <div class="bg-gray-900 rounded-lg p-4 border-t-4 border-blue-500">
+                <h3 class="text-xl font-bold text-blue-400 mb-4 text-center">Команда 1 (CT)</h3>
+                <div class="space-y-3">
+                    {% for player in players %}
+                        {% if player.team == 1 %}
+                        <a href="{{ url_for('user_profile', nickname=player.nickname) }}" class="flex items-center justify-between bg-gray-800 p-3 rounded hover:bg-gray-700 transition">
+                            <div class="flex items-center">
+                                <img src="{{ player.avatar_url or 'https://ui-avatars.com/api/?name=' + player.nickname }}" class="w-8 h-8 rounded-full mr-3">
+                                <span class="font-medium text-white">{{ player.nickname }}</span>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-bold text-yellow-500">{{ player.elo }} ELO</div>
+                                <!-- K/D if available -->
+                                {% if player.kills is defined %}
+                                <div class="text-xs text-gray-400">{{ player.kills }}K / {{ player.deaths }}D</div>
+                                {% endif %}
+                            </div>
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Team 2 -->
+            <div class="bg-gray-900 rounded-lg p-4 border-t-4 border-orange-500">
+                <h3 class="text-xl font-bold text-orange-400 mb-4 text-center">Команда 2 (T)</h3>
+                <div class="space-y-3">
+                    {% for player in players %}
+                        {% if player.team == 2 %}
+                        <a href="{{ url_for('user_profile', nickname=player.nickname) }}" class="flex items-center justify-between bg-gray-800 p-3 rounded hover:bg-gray-700 transition">
+                            <div class="flex items-center">
+                                <img src="{{ player.avatar_url or 'https://ui-avatars.com/api/?name=' + player.nickname }}" class="w-8 h-8 rounded-full mr-3">
+                                <span class="font-medium text-white">{{ player.nickname }}</span>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-bold text-yellow-500">{{ player.elo }} ELO</div>
+                                {% if player.kills is defined %}
+                                <div class="text-xs text-gray-400">{{ player.kills }}K / {{ player.deaths }}D</div>
+                                {% endif %}
+                            </div>
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <a href="{{ url_for('matches') }}" class="text-gray-400 hover:text-white transition">← Вернуться к списку матчей</a>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

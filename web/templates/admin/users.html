@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-white">Manage Users</h1>
+        <div class="flex gap-2">
+            <a href="{{ url_for('download_db') }}" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold">
+                ⬇️ Download Backup (DB)
+            </a>
+            <a href="{{ url_for('admin_dashboard') }}" class="text-gray-400 hover:text-white">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-gray-300">
+                <thead class="bg-gray-700 text-xs uppercase text-gray-400">
+                    <tr>
+                        <th class="px-6 py-3">ID</th>
+                        <th class="px-6 py-3">Nickname</th>
+                        <th class="px-6 py-3">ELO</th>
+                        <th class="px-6 py-3">Role</th>
+                        <th class="px-6 py-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    {% for user in users %}
+                    <tr class="hover:bg-gray-700">
+                        <td class="px-6 py-4">{{ user.user_id }}</td>
+                        <td class="px-6 py-4 font-bold text-white">
+                            <form action="{{ url_for('admin_edit_user', user_id=user.user_id) }}" method="POST" class="flex items-center gap-2">
+                                <input type="text" name="nickname" value="{{ user.nickname }}" class="bg-gray-900 text-white px-2 py-1 rounded w-32 text-sm">
+                                <button type="submit" class="text-blue-400 hover:text-blue-300">💾</button>
+                            </form>
+                        </td>
+                        <td class="px-6 py-4">
+                            <form action="{{ url_for('admin_edit_user', user_id=user.user_id) }}" method="POST" class="flex items-center gap-2">
+                                <input type="number" name="elo" value="{{ user.elo }}" class="bg-gray-900 text-orange-500 px-2 py-1 rounded w-20 text-sm font-bold">
+                                <button type="submit" class="text-blue-400 hover:text-blue-300">💾</button>
+                            </form>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if user.is_admin %}
+                                <span class="bg-yellow-900 text-yellow-300 py-1 px-2 rounded text-xs font-bold">ADMIN</span>
+                            {% else %}
+                                <span class="bg-gray-600 text-gray-300 py-1 px-2 rounded text-xs">User</span>
+                            {% endif %}
+                            {% if user.is_banned %}
+                                <span class="bg-red-900 text-red-300 py-1 px-2 rounded text-xs ml-1">BANNED</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 flex flex-col gap-2">
+                            <!-- Ban/Unban -->
+                            {% if user.is_banned %}
+                                <form action="{{ url_for('admin_unban_user', user_id=user.user_id) }}" method="POST">
+                                    <button type="submit" class="text-green-500 hover:text-green-400 text-xs font-bold uppercase">Unban</button>
+                                </form>
+                            {% else %}
+                                <form action="{{ url_for('admin_ban_user', user_id=user.user_id) }}" method="POST">
+                                    <button type="submit" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase" onclick="return confirm('Ban user?')">Ban</button>
+                                </form>
+                            {% endif %}
+
+                            <!-- Make/Revoke Admin -->
+                            {% if user.is_admin %}
+                                <form action="{{ url_for('admin_revoke_admin', user_id=user.user_id) }}" method="POST">
+                                    <button type="submit" class="text-gray-400 hover:text-gray-200 text-xs uppercase" onclick="return confirm('Remove admin rights?')">Revoke Admin</button>
+                                </form>
+                            {% else %}
+                                <form action="{{ url_for('admin_make_admin', user_id=user.user_id) }}" method="POST">
+                                    <button type="submit" class="text-yellow-500 hover:text-yellow-400 text-xs font-bold uppercase" onclick="return confirm('Make this user an ADMIN?')">Make Admin</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

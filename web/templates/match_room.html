@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-5xl mx-auto bg-gray-900 rounded-lg overflow-hidden shadow-2xl border border-gray-800">
+        
+        <!-- Header -->
+        <div class="bg-gray-800 p-6 border-b border-gray-700 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-white mb-1">MATCH #{{ match.id }}</h1>
+                <div class="flex items-center space-x-2">
+                    <span class="bg-orange-600 text-white text-xs px-2 py-1 rounded font-bold uppercase">{{ match.mode }}</span>
+                    {% if match.status == 'active' %}
+                        <span class="bg-green-600 text-white text-xs px-2 py-1 rounded font-bold uppercase animate-pulse">LIVE</span>
+                    {% else %}
+                        <span class="bg-gray-600 text-white text-xs px-2 py-1 rounded font-bold uppercase">FINISHED</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-gray-400 text-sm">Server IP</p>
+                <div class="flex items-center space-x-2 bg-black bg-opacity-30 px-3 py-1 rounded mt-1">
+                    <code class="text-orange-500 font-mono select-all">connect 145.239.12.33:27015</code>
+                    <button class="text-gray-500 hover:text-white" title="Copy">📋</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Players -->
+        <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 relative">
+            <!-- VS Separator -->
+            <div class="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block">
+                <div class="bg-gray-800 rounded-full w-16 h-16 flex items-center justify-center border-4 border-gray-900 shadow-xl">
+                    <span class="text-orange-500 font-black text-xl italic">VS</span>
+                </div>
+            </div>
+
+            {% for player in players %}
+            <div class="text-center {% if loop.index0 == 1 %}md:text-right{% else %}md:text-left{% endif %}">
+                <div class="mb-4 relative inline-block">
+                    {% if player.avatar_url %}
+                        <img src="{{ player.avatar_url }}" alt="{{ player.nickname }}" class="w-24 h-24 rounded-full mx-auto md:mx-0 border-4 border-gray-700 shadow-lg object-cover">
+                    {% else %}
+                        <img src="https://ui-avatars.com/api/?name={{ player.nickname }}&background=random&size=128" alt="{{ player.nickname }}" class="w-24 h-24 rounded-full mx-auto md:mx-0 border-4 border-gray-700 shadow-lg">
+                    {% endif %}
+                </div>
+                
+                <h2 class="text-2xl font-bold text-white mb-1">{{ player.nickname }}</h2>
+                <p class="text-orange-500 font-bold mb-4">{{ player.elo }} ELO</p>
+                {% if player.bio %}
+                    <p class="text-gray-400 text-xs mb-4 max-w-xs mx-auto md:mx-0">{{ player.bio }}</p>
+                {% endif %}
+                
+                {% if match.status == 'finished' %}
+                    {% if match.winner_team == player.user_id %}
+                        <div class="inline-block bg-green-600 text-white px-4 py-2 rounded font-bold uppercase shadow-lg transform rotate-3">WINNER 🏆</div>
+                    {% else %}
+                        <div class="inline-block bg-red-900 text-red-300 px-4 py-2 rounded font-bold uppercase opacity-50">DEFEAT</div>
+                    {% endif %}
+                {% endif %}
+                
+                {% if match.status == 'active' %}
+                    <form action="{{ url_for('submit_match_result', match_id=match.id) }}" method="POST" class="mt-6">
+                        <input type="hidden" name="winner_id" value="{{ player.user_id }}">
+                        <button type="submit" class="w-full bg-gray-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded border border-gray-600 transition duration-300" onclick="return confirm('Confirm that {{ player.nickname }} won?')">
+                            Set as Winner
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Map Veto System -->
+        <div class="bg-gray-800 p-6 border-t border-gray-700 text-center">
+            <h3 class="text-gray-400 text-sm uppercase font-bold mb-4">Map Veto</h3>
+            
+            {% if match.map_picked %}
+                <div class="flex justify-center items-center flex-col">
+                    <p class="text-gray-400 mb-2">Map Picked:</p>
+                    <div class="bg-green-600 text-white text-2xl font-bold px-8 py-4 rounded-lg shadow-lg border-2 border-green-400">
+                        {{ match.map_picked }}
+                    </div>
+                </div>
+            {% else %}
+                <div class="flex flex-wrap justify-center gap-4">
+                    {% for map_name in map_pool %}
+                        {% set status = veto_data.get(map_name, 'available') %}
+                        
+                        <div class="relative group">
+                            <form action="{{ url_for('match_veto', match_id=match.id) }}" method="POST">
+                                <input type="hidden" name="map_name" value="{{ map_name }}">
+                                
+                                <button type="submit" 
+                                    class="w-32 h-20 rounded-lg flex items-center justify-center font-bold text-lg shadow-md transition-all duration-200
+                                    {% if status == 'banned' %}
+                                        bg-gray-700 text-gray-500 cursor-not-allowed opacity-50
+                                    {% elif match.current_veto_turn == session.user_id %}
+                                        bg-gray-700 hover:bg-red-900 text-white border border-gray-600 hover:border-red-500
+                                    {% else %}
+                                        bg-gray-700 text-gray-400 cursor-wait opacity-80
+                                    {% endif %}"
+                                    {% if status == 'banned' or match.current_veto_turn != session.user_id %}disabled{% endif %}
+                                >
+                                    {{ map_name }}
+                                    {% if status == 'banned' %}
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span class="text-red-500 text-4xl font-black opacity-80">X</span>
+                                        </div>
+                                    {% endif %}
+                                </button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="mt-6 text-lg">
+                    {% if match.current_veto_turn == session.user_id %}
+                        <span class="text-orange-500 font-bold animate-pulse">ВАШ ХОД: Забаньте карту!</span>
+                    {% else %}
+                        <span class="text-gray-500">Ожидание соперника...</span>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Chat Section -->
+        <div class="bg-gray-800 p-6 border-t border-gray-700">
+            <h3 class="text-gray-400 text-sm uppercase font-bold mb-4">Chat</h3>
+            <div class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto mb-4 space-y-3 flex flex-col-reverse" id="chat-container">
+                <!-- Messages will appear here (newest at bottom, but flex-reverse handles scroll) -->
+                {% for msg in chat_messages|reverse %}
+                    <div class="flex items-start space-x-3 {% if msg.user_id == session.user_id %}flex-row-reverse space-x-reverse{% endif %}">
+                        {% if msg.avatar_url %}
+                            <img src="{{ msg.avatar_url }}" class="w-8 h-8 rounded-full flex-shrink-0 object-cover">
+                        {% else %}
+                            <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs flex-shrink-0">{{ msg.nickname[:1] }}</div>
+                        {% endif %}
+                        
+                        <div class="bg-gray-800 p-2 rounded-lg max-w-xs {% if msg.user_id == session.user_id %}bg-blue-900{% endif %}">
+                            <div class="text-xs text-gray-400 mb-1 flex justify-between gap-4">
+                                <span class="font-bold {% if msg.user_id == session.user_id %}text-blue-300{% else %}text-orange-300{% endif %}">{{ msg.nickname }}</span>
+                                <span>{{ msg.created_at[11:16] }}</span>
+                            </div>
+                            <p class="text-sm text-white break-words">{{ msg.message }}</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            
+            <form action="{{ url_for('match_chat', match_id=match.id) }}" method="POST" class="flex gap-2">
+                <input type="text" name="message" placeholder="Type a message..." required autocomplete="off"
+                       class="flex-1 bg-gray-700 border border-gray-600 text-white rounded px-4 py-2 focus:outline-none focus:border-orange-500">
+                <button type="submit" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-6 rounded transition duration-300">
+                    Send
+                </button>
+            </form>
+        </div>
+        
+    </div>
+</div>
+{% endblock %}

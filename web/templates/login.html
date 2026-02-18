@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="flex justify-center items-center h-screen bg-gray-900">
+    <div class="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
+        <h2 class="text-2xl font-bold mb-6 text-center text-yellow-500">Вход</h2>
+        <form action="/login" method="POST">
+            <div class="mb-4">
+                <label for="user_id" class="block text-gray-300 text-sm font-bold mb-2">Telegram ID:</label>
+                <input type="text" id="user_id" name="user_id" class="w-full px-3 py-2 text-gray-700 bg-gray-200 rounded focus:outline-none focus:shadow-outline" required>
+            </div>
+            <div class="flex items-center justify-between">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full">
+                    Войти
+                </button>
+            </div>
+        </form>
+        <p class="mt-4 text-center text-gray-400 text-xs">
+            Введите ваш Telegram ID для входа.
+            <br>
+            (Для теста используйте существующий ID из базы)
+        </p>
+    </div>
+</div>
+{% endblock %}
