@@ -52,6 +52,7 @@ def get_db_connection():
     except Exception as e:
         print(f"Error connecting to database: {e}")
         logging.error(f"Error connecting to database: {e}")
+        g.db_connect_error = str(e)
         return None
 
 def log_error(e, context=""):
@@ -149,7 +150,8 @@ def login():
         user_id = request.form['user_id']
         conn = get_db_connection()
         if not conn:
-            flash(f'Database connection failed. Please try again later.', 'error')
+            error_msg = getattr(g, 'db_connect_error', 'Unknown error')
+            flash(f'Database connection failed: {error_msg}', 'error')
             return render_template('login.html')
             
         cursor = conn.cursor()
