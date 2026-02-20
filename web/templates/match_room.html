@@ -140,7 +140,7 @@
                         <div class="bg-gray-800 p-2 rounded-lg max-w-xs {% if msg.user_id == session.user_id %}bg-blue-900{% endif %}">
                             <div class="text-xs text-gray-400 mb-1 flex justify-between gap-4">
                                 <span class="font-bold {% if msg.user_id == session.user_id %}text-blue-300{% else %}text-orange-300{% endif %}">{{ msg.nickname }}</span>
-                                <span>{{ msg.created_at[11:16] }}</span>
+                                <span>{{ (msg.created_at|string)[11:16] }}</span>
                             </div>
                             <p class="text-sm text-white break-words">{{ msg.message }}</p>
                         </div>
