@@ -45,7 +45,13 @@ class PostgresConnectionWrapper:
 
 def get_db_connection():
     if IS_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+        try:
+            # Add sslmode='require' for secure connection on Render
+            conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor, sslmode='require')
+        except psycopg2.OperationalError:
+            # Fallback without sslmode if require fails (e.g. local postgres)
+            conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+            
         conn.autocommit = False
         return PostgresConnectionWrapper(conn)
     else:

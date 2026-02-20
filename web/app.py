@@ -95,7 +95,7 @@ def settings():
     
     conn = get_db_connection()
     if not conn:
-        flash('Ошибка подключения к базе данных', 'error')
+        flash('Ошибка подключения к базе данных. Попробуйте позже.', 'error')
         return redirect(url_for('index'))
 
     cursor = conn.cursor()
@@ -149,7 +149,7 @@ def login():
         user_id = request.form['user_id']
         conn = get_db_connection()
         if not conn:
-            flash('Database error', 'error')
+            flash(f'Database connection failed. Please try again later.', 'error')
             return render_template('login.html')
             
         cursor = conn.cursor()
