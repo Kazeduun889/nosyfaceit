@@ -85,7 +85,12 @@
                     {% endif %}
                 </div>
                 
-                <h2 class="text-2xl font-bold text-white mb-1">{{ player.nickname }}</h2>
+                <h2 class="text-2xl font-bold text-white mb-1">
+                    {% if player.clan_tag %}
+                        <span class="text-yellow-500 font-bold">[{{ player.clan_tag }}]</span>
+                    {% endif %}
+                    {{ player.nickname }}
+                </h2>
                 <p class="text-orange-500 font-bold mb-1">{{ player.elo }} ELO</p>
                 {% if player.game_id %}
                     <p class="text-gray-500 font-mono text-xs mb-4 select-all">ID: {{ player.game_id }}</p>

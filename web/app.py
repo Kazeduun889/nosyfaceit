@@ -341,6 +341,10 @@ def logout():
 
 @app.route('/matches')
 def matches():
+    if not session.get('is_admin'):
+        flash('Доступ запрещен. Только администраторы могут просматривать список всех матчей.', 'error')
+        return redirect(url_for('index'))
+        
     conn = get_db_connection()
     if not conn:
         flash('Database error', 'error')
@@ -368,10 +372,12 @@ def match_detail(match_id):
         
     # Get players with team info (if available)
     db.execute_query(cursor, '''
-        SELECT mp.*, u.nickname, u.elo, u.avatar_url, ms.kills, ms.deaths
+        SELECT mp.*, u.nickname, u.elo, u.avatar_url, ms.kills, ms.deaths, c.tag as clan_tag
         FROM match_players mp
         JOIN users u ON mp.user_id = u.user_id
         LEFT JOIN match_stats ms ON ms.match_id = mp.match_id AND ms.user_id = mp.user_id
+        LEFT JOIN clan_members cm ON cm.user_id = u.user_id
+        LEFT JOIN clans c ON c.id = cm.clan_id
         WHERE mp.match_id = ?
     ''', (match_id,))
     players = cursor.fetchall()
@@ -790,6 +796,31 @@ def join_clan_queue():
         conn.close()
         return redirect(url_for('clans'))
         
+    # Check if user is in an active 1v1 match
+    db.execute_query(cursor, '''
+        SELECT m.id FROM matches m
+        JOIN match_players mp ON m.id = mp.match_id
+        WHERE mp.user_id = ? AND m.status = 'active'
+    ''', (session['user_id'],))
+    active_match_1v1 = cursor.fetchone()
+    
+    if active_match_1v1:
+        conn.close()
+        flash("Вы не можете искать клановый матч, пока находитесь в активном 1v1 матче!", "error")
+        return redirect(url_for('match_room', match_id=active_match_1v1['id']))
+
+    # Check if clan is already in an active clan match
+    db.execute_query(cursor, '''
+        SELECT id FROM clan_matches 
+        WHERE (clan1_id = ? OR clan2_id = ?) AND status = 'active'
+    ''', (user_clan_info['clan_id'], user_clan_info['clan_id']))
+    active_clan_match = cursor.fetchone()
+    
+    if active_clan_match:
+        conn.close()
+        flash("Ваш клан уже находится в активном матче!", "error")
+        return redirect(url_for('clan_matchmaking'))
+        
     clan_id = user_clan_info['clan_id']
     
     # Check if anyone else is in queue
@@ -1117,6 +1148,18 @@ def join_queue():
             conn.close()
             flash("Вы уже находитесь в активном матче!", "warning")
             return redirect(url_for('match_room', match_id=active_match['id']))
+            
+        # Check if user's clan is in an active match (if they are in a clan)
+        db.execute_query(cursor, 'SELECT clan_id FROM clan_members WHERE user_id = ?', (session['user_id'],))
+        clan_member = cursor.fetchone()
+        
+        if clan_member:
+             db.execute_query(cursor, "SELECT id FROM clan_matches WHERE (clan1_id = ? OR clan2_id = ?) AND status = 'active'", (clan_member['clan_id'], clan_member['clan_id']))
+             active_clan_match = cursor.fetchone()
+             if active_clan_match:
+                 conn.close()
+                 flash("Ваш клан находится в активном матче! Вы не можете искать 1v1.", "warning")
+                 return redirect(url_for('clan_matchmaking'))
         
         # Check if already in queue
         db.execute_query(cursor, 'SELECT * FROM matchmaking_queue WHERE user_id = ?', (session['user_id'],))
@@ -1156,11 +1199,12 @@ def join_queue():
             
             # Add players
             # execute_query handles placeholder conversion for us (using ? is fine)
-            db.execute_query(cursor, "INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, session['user_id']))
-            db.execute_query(cursor, "INSERT INTO match_players (match_id, user_id, accepted) VALUES (?, ?, 1)", (match_id, opponent_id))
+            # Assign teams: User=1, Opponent=2
+            db.execute_query(cursor, "INSERT INTO match_players (match_id, user_id, accepted, team) VALUES (?, ?, 1, 1)", (match_id, session['user_id']))
+            db.execute_query(cursor, "INSERT INTO match_players (match_id, user_id, accepted, team) VALUES (?, ?, 1, 2)", (match_id, opponent_id))
             
             conn.commit()
-            flash('Матч найден!', 'success')
+            flash('Матч найден! Переход в комнату...', 'success')
             conn.close()
             return redirect(url_for('match_room', match_id=match_id))
             
@@ -1226,9 +1270,11 @@ def match_room(match_id):
             return redirect(url_for('play'))
 
         db.execute_query(cursor, '''
-            SELECT u.*, mp.accepted 
+            SELECT u.*, mp.accepted, c.tag as clan_tag
             FROM match_players mp 
             JOIN users u ON mp.user_id = u.user_id 
+            LEFT JOIN clan_members cm ON cm.user_id = u.user_id
+            LEFT JOIN clans c ON c.id = cm.clan_id
             WHERE mp.match_id = ?
         ''', (match_id,))
         players = cursor.fetchall()
