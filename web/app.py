@@ -1270,12 +1270,13 @@ def match_room(match_id):
             return redirect(url_for('play'))
 
         db.execute_query(cursor, '''
-            SELECT u.*, mp.accepted, c.tag as clan_tag
+            SELECT u.*, mp.accepted, mp.team, c.tag as clan_tag
             FROM match_players mp 
             JOIN users u ON mp.user_id = u.user_id 
             LEFT JOIN clan_members cm ON cm.user_id = u.user_id
             LEFT JOIN clans c ON c.id = cm.clan_id
             WHERE mp.match_id = ?
+            ORDER BY mp.team ASC
         ''', (match_id,))
         players = cursor.fetchall()
         
