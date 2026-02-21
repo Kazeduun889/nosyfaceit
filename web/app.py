@@ -107,11 +107,13 @@ def settings():
         nickname = request.form.get('nickname')
         avatar_url = request.form.get('avatar_url')
         bio = request.form.get('bio')
+        game_id = request.form.get('game_id')
         
         # Validation
         if avatar_url and len(avatar_url) > 500: avatar_url = avatar_url[:500]
         if bio and len(bio) > 1000: bio = bio[:1000]
         if nickname and len(nickname) > 20: nickname = nickname[:20]
+        if game_id and len(game_id) > 50: game_id = game_id[:50]
         
         try:
             if nickname:
@@ -129,8 +131,8 @@ def settings():
                         return redirect(url_for('settings'))
                     session['nickname'] = nickname # Update session
 
-            db.execute_query(cursor, 'UPDATE users SET nickname = ?, avatar_url = ?, bio = ? WHERE user_id = ?',
-                         (nickname, avatar_url, bio, session['user_id']))
+            db.execute_query(cursor, 'UPDATE users SET nickname = ?, avatar_url = ?, bio = ?, game_id = ? WHERE user_id = ?',
+                         (nickname, avatar_url, bio, game_id, session['user_id']))
             conn.commit()
             flash('Настройки сохранены!', 'success')
         except Exception as e:
@@ -164,6 +166,11 @@ def login():
         if user:
             session['user_id'] = user['user_id']
             session['nickname'] = user['nickname']
+            
+            # Check if profile setup is needed
+            if not user.get('game_id'):
+                conn.close()
+                return redirect(url_for('setup_profile'))
             
             # HARDCODED ADMIN GRANT FOR USER 1562788488
             is_admin = 0
@@ -204,15 +211,48 @@ def login():
                 session['nickname'] = nickname
                 session['is_admin'] = is_admin
                 
-                flash(f'Аккаунт создан! Ваш ник: {nickname}. Измените его в настройках.', 'success')
+                flash(f'Аккаунт создан! Пожалуйста, настройте профиль.', 'success')
                 conn.close()
-                return redirect(url_for('index'))
+                return redirect(url_for('setup_profile'))
             except Exception as e:
                 log_error(e, "/login register")
                 flash(f'Ошибка регистрации: {e}', 'error')
                 conn.close()
             
     return render_template('login.html')
+
+@app.route('/setup_profile', methods=['GET', 'POST'])
+def setup_profile():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    conn = get_db_connection()
+    if not conn: return "DB Error", 500
+    
+    if request.method == 'POST':
+        game_id = request.form['game_id']
+        nickname = request.form['nickname']
+        
+        try:
+            cursor = conn.cursor()
+            # Update user
+            db.execute_query(cursor, 'UPDATE users SET game_id = ?, nickname = ? WHERE user_id = ?', 
+                           (game_id, nickname, session['user_id']))
+            conn.commit()
+            
+            # Update session
+            session['nickname'] = nickname
+            
+            flash('Профиль успешно настроен!', 'success')
+            return redirect(url_for('index'))
+        except Exception as e:
+            log_error(e, "/setup_profile")
+            flash(f'Ошибка сохранения: {e}', 'error')
+        finally:
+            conn.close()
+            
+    conn.close()
+    return render_template('setup_profile.html')
 
 @app.route('/debug/update_db')
 def update_db():

@@ -23,6 +23,14 @@
                 <p class="text-xs text-gray-500 mt-1">Вставьте прямую ссылку на изображение (jpg/png).</p>
             </div>
 
+            <!-- Game ID -->
+            <div>
+                <label class="block text-orange-500 text-sm font-bold mb-2">Game ID (Игровой ID)</label>
+                <input type="text" name="game_id" value="{{ user.game_id or '' }}"
+                       class="w-full bg-gray-700 border border-gray-600 text-white rounded px-4 py-2 focus:outline-none focus:border-orange-500">
+                <p class="text-xs text-gray-500 mt-1">Меняйте только при необходимости.</p>
+            </div>
+
             <!-- Nickname -->
             <div>
                 <label class="block text-gray-400 text-sm font-bold mb-2">Никнейм (Макс. 20 символов)</label>
