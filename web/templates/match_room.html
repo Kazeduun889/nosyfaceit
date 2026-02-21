@@ -71,7 +71,7 @@
             </div>
 
             {% for player in players %}
-            <div class="flex flex-col {% if loop.index0 == 1 %}md:items-end{% else %}md:items-start{% endif %} items-center relative">
+            <div class="flex flex-col {% if loop.index0 == 1 %}md:items-end{% else %}md:items-start{% endif %} items-center relative h-full">
                 <!-- Team Label -->
                 <div class="mb-6">
                     {% if loop.index0 == 0 %}
@@ -111,16 +111,19 @@
                     <p class="text-gray-400 text-xs mb-4 max-w-xs mx-auto md:mx-0">{{ player.bio }}</p>
                 {% endif %}
                 
+                <!-- Spacer to push content to bottom -->
+                <div class="flex-grow"></div>
+
                 {% if match.status == 'finished' %}
                     {% if match.winner_team == player.user_id %}
-                        <div class="inline-block bg-green-600 text-white px-4 py-2 rounded font-bold uppercase shadow-lg transform rotate-3">WINNER 🏆</div>
+                        <div class="mt-auto inline-block bg-green-600 text-white px-4 py-2 rounded font-bold uppercase shadow-lg transform rotate-3">WINNER 🏆</div>
                     {% else %}
-                        <div class="inline-block bg-red-900 text-red-300 px-4 py-2 rounded font-bold uppercase opacity-50">DEFEAT</div>
+                        <div class="mt-auto inline-block bg-red-900 text-red-300 px-4 py-2 rounded font-bold uppercase opacity-50">DEFEAT</div>
                     {% endif %}
                 {% endif %}
                 
                 {% if match.status == 'active' %}
-                    <form action="{{ url_for('submit_match_result', match_id=match.id) }}" method="POST" class="mt-6 w-full max-w-xs">
+                    <form action="{{ url_for('submit_match_result', match_id=match.id) }}" method="POST" class="mt-auto w-full max-w-xs">
                         <input type="hidden" name="winner_id" value="{{ player.user_id }}">
                         <button type="submit" class="w-full bg-gray-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg border border-gray-600 hover:border-green-500 shadow-md transition duration-300 uppercase tracking-wider" onclick="return confirm('Confirm that {{ player.nickname }} won?')">
                             Set as Winner
