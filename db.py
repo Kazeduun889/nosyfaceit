@@ -96,9 +96,18 @@ def init_db():
             elo INTEGER DEFAULT 1000,
             level INTEGER DEFAULT 4,
             matches INTEGER DEFAULT 0,
-            wins INTEGER DEFAULT 0
+            wins INTEGER DEFAULT 0,
+            is_admin INTEGER DEFAULT 0
         )
     ''')
+
+    # Migration: Ensure is_admin column exists
+    try:
+        execute_query(cursor, "ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass # Column likely exists or other error we can ignore on init
+
     
     # Matches
     create_table('''

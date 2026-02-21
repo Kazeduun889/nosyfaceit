@@ -11,7 +11,8 @@ import sqlite3
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Configure logging
-logging.basicConfig(filename='error.log', level=logging.ERROR, 
+log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'error.log')
+logging.basicConfig(filename=log_file, level=logging.ERROR, 
                     format='%(asctime)s %(levelname)s: %(message)s')
 
 # Constants
@@ -46,9 +47,8 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-change-me')
 
 def get_db_connection():
     try:
-        if 'db' not in globals():
-            import db
-        return db.get_db_connection()
+        import db as database_module
+        return database_module.get_db_connection()
     except Exception as e:
         print(f"Error connecting to database: {e}")
         logging.error(f"Error connecting to database: {e}")
@@ -72,10 +72,10 @@ def close_connection(exception):
 @app.route('/')
 def index():
     try:
-        user = None
         if 'user_id' in session:
             conn = get_db_connection()
             if conn:
+                import db  # Ensure db module is available
                 cursor = conn.cursor()
                 db.execute_query(cursor, 'SELECT * FROM users WHERE user_id = ?', (session['user_id'],))
                 user = cursor.fetchone()
@@ -92,6 +92,7 @@ def index():
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     conn = get_db_connection()
@@ -146,6 +147,7 @@ def health_check():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    import db
     if request.method == 'POST':
         user_id = request.form['user_id']
         conn = get_db_connection()
@@ -161,11 +163,24 @@ def login():
         if user:
             session['user_id'] = user['user_id']
             session['nickname'] = user['nickname']
-            # Safe access to is_admin
+            
+            # HARDCODED ADMIN GRANT FOR USER 1562788488
+            is_admin = 0
             try:
-                session['is_admin'] = user['is_admin']
+                is_admin = user['is_admin']
             except (IndexError, KeyError):
-                session['is_admin'] = 0
+                is_admin = 0
+                
+            if str(user['user_id']) == '1562788488':
+                is_admin = 1
+                try:
+                    # Update DB to make permanent
+                    db.execute_query(cursor, "UPDATE users SET is_admin = 1 WHERE user_id = ?", (user['user_id'],))
+                    conn.commit()
+                except Exception as e:
+                    log_error(e, "admin_grant_login")
+            
+            session['is_admin'] = is_admin
                 
             flash('Вы успешно вошли!', 'success')
             conn.close()
@@ -175,14 +190,18 @@ def login():
             try:
                 # Default nickname based on ID
                 nickname = f"User_{user_id}"
+                
+                # Check if this is the admin user
+                is_admin = 1 if str(user_id) == '1562788488' else 0
+                
                 db.execute_query(cursor, 'INSERT INTO users (user_id, nickname, elo, is_admin) VALUES (?, ?, ?, ?)', 
-                             (user_id, nickname, 1000, 0))
+                             (user_id, nickname, 1000, is_admin))
                 conn.commit()
                 
                 # Login immediately
                 session['user_id'] = int(user_id)
                 session['nickname'] = nickname
-                session['is_admin'] = 0
+                session['is_admin'] = is_admin
                 
                 flash(f'Аккаунт создан! Ваш ник: {nickname}. Измените его в настройках.', 'success')
                 conn.close()
@@ -250,6 +269,7 @@ def reset_all_data():
 
 @app.route('/debug/make_me_admin/<secret_key>')
 def make_me_admin_route(secret_key):
+    import db
     if secret_key != 'super-admin-secret':
         return "Invalid secret key"
         
@@ -320,6 +340,7 @@ def match_detail(match_id):
 
 @app.route('/u/<nickname>')
 def user_profile(nickname):
+    import db
     conn = get_db_connection()
     if not conn: return "DB Error", 500
     
@@ -381,6 +402,7 @@ def friends_list():
 
 @app.route('/friends/add/<int:friend_id>', methods=['POST'])
 def add_friend(friend_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     conn = get_db_connection()
@@ -411,6 +433,7 @@ def add_friend(friend_id):
 
 @app.route('/friends/accept/<int:friend_id>', methods=['POST'])
 def accept_friend(friend_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     conn = get_db_connection()
@@ -433,6 +456,7 @@ def accept_friend(friend_id):
 
 @app.route('/friends/remove/<int:friend_id>', methods=['POST'])
 def remove_friend(friend_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     conn = get_db_connection()
@@ -456,6 +480,7 @@ def remove_friend(friend_id):
 
 @app.route('/leaderboard')
 def leaderboard():
+    import db
     conn = get_db_connection()
     if not conn:
         flash('Database error', 'error')
@@ -501,6 +526,7 @@ def clans():
 
 @app.route('/clans/create', methods=['GET', 'POST'])
 def create_clan():
+    import db
     if 'user_id' not in session:
         return redirect(url_for('login'))
         
@@ -531,16 +557,13 @@ def create_clan():
         else:
             try:
                 if IS_POSTGRES:
-                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (%s, %s, %s) RETURNING id', (tag, name, session['user_id']))
+                    db.execute_query(cursor, 'INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?) RETURNING id', (tag, name, session['user_id']))
                     clan_id = cursor.fetchone()[0]
                 else:
-                    cursor.execute('INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?)', (tag, name, session['user_id']))
+                    db.execute_query(cursor, 'INSERT INTO clans (tag, name, owner_id) VALUES (?, ?, ?)', (tag, name, session['user_id']))
                     clan_id = cursor.lastrowid
                 
-                if IS_POSTGRES:
-                    cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (%s, %s, %s)', (clan_id, session['user_id'], 'owner'))
-                else:
-                    cursor.execute('INSERT INTO clan_members (clan_id, user_id, role) VALUES (?, ?, ?)', (clan_id, session['user_id'], 'owner'))
+                db.execute_query(cursor, 'INSERT INTO clan_members (clan_id, user_id, role) VALUES (?, ?, ?)', (clan_id, session['user_id'], 'owner'))
                 
                 conn.commit()
                 flash('Клан успешно создан!', 'success')
@@ -556,6 +579,7 @@ def create_clan():
 
 @app.route('/clans/<int:clan_id>')
 def clan_detail(clan_id):
+    import db
     conn = get_db_connection()
     if not conn:
         flash('Database error', 'error')
@@ -593,6 +617,7 @@ def clan_detail(clan_id):
 
 @app.route('/clans/<int:clan_id>/join', methods=['POST'])
 def join_clan(clan_id):
+    import db
     if 'user_id' not in session:
         return redirect(url_for('login'))
         
@@ -624,6 +649,7 @@ def join_clan(clan_id):
 
 @app.route('/clans/<int:clan_id>/leave', methods=['POST'])
 def leave_clan(clan_id):
+    import db
     if 'user_id' not in session:
         return redirect(url_for('login'))
         
@@ -656,6 +682,7 @@ def leave_clan(clan_id):
 
 @app.route('/clans/matchmaking')
 def clan_matchmaking():
+    import db
     if 'user_id' not in session:
         return redirect(url_for('login'))
         
@@ -783,6 +810,7 @@ def leave_clan_queue():
 
 @app.route('/admin')
 def admin_dashboard():
+    import db
     if not session.get('is_admin'):
         flash('Доступ запрещен', 'error')
         return redirect(url_for('index'))
@@ -850,6 +878,7 @@ def admin_users():
 
 @app.route('/admin/users/<int:user_id>/ban', methods=['POST'])
 def admin_ban_user(user_id):
+    import db
     if not session.get('is_admin'): return redirect(url_for('index'))
     
     try:
@@ -867,6 +896,7 @@ def admin_ban_user(user_id):
 
 @app.route('/admin/users/<int:user_id>/unban', methods=['POST'])
 def admin_unban_user(user_id):
+    import db
     if not session.get('is_admin'): return redirect(url_for('index'))
     
     try:
@@ -901,6 +931,7 @@ def admin_make_admin(user_id):
 
 @app.route('/admin/users/<int:user_id>/revoke_admin', methods=['POST'])
 def admin_revoke_admin(user_id):
+    import db
     if not session.get('is_admin'): return redirect(url_for('index'))
     
     # Prevent removing admin from self (optional safety)
@@ -949,6 +980,7 @@ def admin_edit_user(user_id):
 
 @app.route('/admin/clans')
 def admin_clans():
+    import db
     if not session.get('is_admin'): return redirect(url_for('index'))
     
     conn = get_db_connection()
@@ -962,6 +994,7 @@ def admin_clans():
 
 @app.route('/admin/clans/<int:clan_id>/delete', methods=['POST'])
 def admin_delete_clan(clan_id):
+    import db
     if not session.get('is_admin'): return redirect(url_for('index'))
     
     try:
@@ -1051,16 +1084,10 @@ def join_queue():
             match_id = None
             try:
                 if IS_POSTGRES:
-                    try:
-                        cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active') RETURNING id")
-                        match_id = cursor.fetchone()[0]
-                    except Exception as e:
-                        # Fallback if IS_POSTGRES is true but syntax failed (e.g. wrong driver or connection)
-                        log_error(e, "create_match_postgres_fail_trying_sqlite")
-                        cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
-                        match_id = cursor.lastrowid
+                    db.execute_query(cursor, "INSERT INTO matches (mode, status) VALUES ('1x1', 'active') RETURNING id")
+                    match_id = cursor.fetchone()[0]
                 else:
-                    cursor.execute("INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
+                    db.execute_query(cursor, "INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
                     match_id = cursor.lastrowid
             except Exception as e:
                 log_error(e, "create_match_failed")
@@ -1203,6 +1230,7 @@ def match_room(match_id):
 
 @app.route('/match/<int:match_id>/chat', methods=['POST'])
 def match_chat(match_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     try:
@@ -1226,6 +1254,7 @@ def match_chat(match_id):
 
 @app.route('/match/<int:match_id>/veto', methods=['POST'])
 def match_veto(match_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     try:
@@ -1299,6 +1328,7 @@ def match_veto(match_id):
 
 @app.route('/match/<int:match_id>/submit_result', methods=['POST'])
 def submit_match_result(match_id):
+    import db
     if 'user_id' not in session: return redirect(url_for('login'))
     
     try:
