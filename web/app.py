@@ -72,6 +72,7 @@ def close_connection(exception):
 @app.route('/')
 def index():
     try:
+        user = None
         if 'user_id' in session:
             conn = get_db_connection()
             if conn:

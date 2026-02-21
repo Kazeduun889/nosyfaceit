@@ -106,7 +106,8 @@ def init_db():
         execute_query(cursor, "ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
         conn.commit()
     except Exception:
-        pass # Column likely exists or other error we can ignore on init
+        conn.rollback() # Reset transaction if column exists
+
 
     
     # Matches
