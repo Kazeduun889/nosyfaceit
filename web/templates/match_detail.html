@@ -23,8 +23,9 @@
         <div class="bg-gray-700 rounded-lg p-6 mb-8 text-center relative overflow-hidden">
             <!-- Background Map Image (Placeholder logic) -->
             {% set map_image = (match.map_picked|default('default')|lower) %}
+            {% set map_url = url_for('static', filename='maps/' + map_image + '.jpg') %}
             <div class="absolute inset-0 opacity-20 bg-cover bg-center" 
-                 style="background-image: url('{{ url_for('static', filename='maps/' + map_image + '.jpg') }}');"></div>
+                 style="background-image: url('{{ map_url }}');"></div>
             
             <div class="relative z-10">
                 <h2 class="text-2xl font-bold text-white mb-2">{{ match.map_picked or 'Карта не выбрана' }}</h2>
