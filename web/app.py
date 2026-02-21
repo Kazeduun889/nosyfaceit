@@ -1473,13 +1473,19 @@ def submit_match_result(match_id):
              flash('Match not active or not found', 'error')
              return redirect(url_for('match_room', match_id=match_id))
 
-        # Verify user is part of match
-        db.execute_query(cursor, 'SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, session['user_id']))
-        is_participant = cursor.fetchone()
-        if not is_participant:
+        # Verify user is admin
+        if not session.get('is_admin'):
              conn.close()
-             flash('You are not a participant in this match', 'error')
+             flash('Only admins can submit match results', 'error')
              return redirect(url_for('match_room', match_id=match_id))
+
+    # Verify user is part of match - NO LONGER NEEDED IF ADMIN ONLY
+    # db.execute_query(cursor, 'SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, session['user_id']))
+    # is_participant = cursor.fetchone()
+    # if not is_participant:
+    #      conn.close()
+    #      flash('You are not a participant in this match', 'error')
+    #      return redirect(url_for('match_room', match_id=match_id))
 
         db.execute_query(cursor, "UPDATE matches SET status = 'finished', winner_team = ? WHERE id = ?", (winner_id, match_id))
         
