@@ -1169,17 +1169,17 @@ def join_queue():
             flash("Вы уже находитесь в активном матче!", "warning")
             return redirect(url_for('match_room', match_id=active_match['id']))
             
-        # Check if user's clan is in an active match (if they are in a clan)
-        db.execute_query(cursor, 'SELECT clan_id FROM clan_members WHERE user_id = ?', (session['user_id'],))
-        clan_member = cursor.fetchone()
+        # Check if user's clan is in an active match (if they are in a clan) - DISABLED TEMPORARILY AS CLAN WARS IS IN DEV
+        # db.execute_query(cursor, 'SELECT clan_id FROM clan_members WHERE user_id = ?', (session['user_id'],))
+        # clan_member = cursor.fetchone()
         
-        if clan_member:
-             db.execute_query(cursor, "SELECT id FROM clan_matches WHERE (clan1_id = ? OR clan2_id = ?) AND status = 'active'", (clan_member['clan_id'], clan_member['clan_id']))
-             active_clan_match = cursor.fetchone()
-             if active_clan_match:
-                 conn.close()
-                 flash("Ваш клан находится в активном матче! Вы не можете искать 1v1.", "warning")
-                 return redirect(url_for('clan_matchmaking'))
+        # if clan_member:
+        #      db.execute_query(cursor, "SELECT id FROM clan_matches WHERE (clan1_id = ? OR clan2_id = ?) AND status = 'active'", (clan_member['clan_id'], clan_member['clan_id']))
+        #      active_clan_match = cursor.fetchone()
+        #      if active_clan_match:
+        #          conn.close()
+        #          flash("Ваш клан находится в активном матче! Вы не можете искать 1v1.", "warning")
+        #          return redirect(url_for('clan_matchmaking'))
         
         # Check if already in queue
         db.execute_query(cursor, 'SELECT * FROM matchmaking_queue WHERE user_id = ?', (session['user_id'],))
