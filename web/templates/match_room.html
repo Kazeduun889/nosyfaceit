@@ -79,7 +79,9 @@
                         <img src="https://ui-avatars.com/api/?name={{ player.nickname }}&background=random&size=128" alt="{{ player.nickname }}" class="w-24 h-24 rounded-full mx-auto md:mx-0 border-4 border-gray-700 shadow-lg">
                     {% endif %}
                     {% if loop.index0 == 0 %}
-                        <div class="absolute -top-2 -right-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full border border-gray-900">HOST (CT)</div>
+                        <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full border border-gray-900 whitespace-nowrap shadow-md z-10">Counter-Terrorist (CT)</div>
+                    {% else %}
+                        <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-orange-600 text-white text-xs font-bold px-3 py-1 rounded-full border border-gray-900 whitespace-nowrap shadow-md z-10">Terrorist (T)</div>
                     {% endif %}
                 </div>
                 

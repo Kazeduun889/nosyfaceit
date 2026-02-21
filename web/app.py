@@ -1105,6 +1105,19 @@ def join_queue():
         
         cursor = conn.cursor()
         
+        # CRITICAL FIX: Check if already in an active match BEFORE joining queue
+        db.execute_query(cursor, '''
+            SELECT m.id FROM matches m
+            JOIN match_players mp ON m.id = mp.match_id
+            WHERE mp.user_id = ? AND m.status = 'active'
+        ''', (session['user_id'],))
+        active_match = cursor.fetchone()
+        
+        if active_match:
+            conn.close()
+            flash("Вы уже находитесь в активном матче!", "warning")
+            return redirect(url_for('match_room', match_id=active_match['id']))
+        
         # Check if already in queue
         db.execute_query(cursor, 'SELECT * FROM matchmaking_queue WHERE user_id = ?', (session['user_id'],))
         existing_queue = cursor.fetchone()
