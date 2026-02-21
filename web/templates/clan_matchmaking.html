@@ -2,54 +2,17 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8">
-    <div class="max-w-4xl mx-auto">
-        <div class="bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-            <h1 class="text-4xl font-bold text-yellow-500 mb-2">Клановая Война</h1>
-            <p class="text-xl text-gray-400 mb-8">[{{ clan['name'] }}]</p>
+    <div class="max-w-4xl mx-auto text-center">
+        <div class="bg-gray-800 rounded-lg p-10 shadow-lg border border-gray-700">
+            <h1 class="text-4xl font-bold text-gray-500 mb-6">CLAN WARS</h1>
+            <div class="text-6xl mb-6">🛠️</div>
+            <h2 class="text-2xl text-white font-bold mb-4">MODE IN DEVELOPMENT</h2>
+            <p class="text-gray-400 mb-8">This feature is currently being built. Stay tuned for updates!</p>
             
-            {% if active_match %}
-                <div class="bg-green-900 border border-green-500 rounded p-6 mb-6">
-                    <h2 class="text-2xl font-bold text-white mb-4">Матч найден!</h2>
-                    <div class="flex justify-center items-center space-x-8 text-3xl font-bold">
-                        <div class="text-blue-400">[{{ clan['name'] }}]</div>
-                        <div class="text-white">VS</div>
-                        <div class="text-red-400">[{{ opponent['tag'] }}] {{ opponent['name'] }}</div>
-                    </div>
-                    <p class="mt-4 text-gray-300">Свяжитесь с лидером противника для начала игры.</p>
-                </div>
-            {% else %}
-                {% if in_queue %}
-                    <div class="bg-blue-900 border border-blue-500 rounded p-6 mb-6 animate-pulse">
-                        <h2 class="text-2xl font-bold text-white mb-2">Поиск противника...</h2>
-                        <p class="text-gray-300">Ожидайте, пока другой клан начнет поиск.</p>
-                    </div>
-                    
-                    <form action="{{ url_for('leave_clan_queue') }}" method="POST">
-                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded text-lg transition">
-                            Отменить поиск
-                        </button>
-                    </form>
-                {% else %}
-                    <div class="mb-8">
-                        <p class="text-gray-300 mb-6">Нажмите кнопку ниже, чтобы начать поиск кланового матча.</p>
-                        <form action="{{ url_for('join_clan_queue') }}" method="POST">
-                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-10 rounded-lg text-xl transition transform hover:scale-105 shadow-lg">
-                                НАЧАТЬ ПОИСК
-                            </button>
-                        </form>
-                    </div>
-                {% endif %}
-            {% endif %}
+            <a href="{{ url_for('clans') }}" class="inline-block bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded transition duration-300">
+                Back to Clans
+            </a>
         </div>
     </div>
 </div>
-
-{% if in_queue %}
-<script>
-    // Refresh page every 5 seconds to check for match
-    setTimeout(function() {
-        location.reload();
-    }, 5000);
-</script>
-{% endif %}
 {% endblock %}
