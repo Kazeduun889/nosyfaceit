@@ -341,17 +341,37 @@ def logout():
 
 @app.route('/matches')
 def matches():
-    if not session.get('is_admin'):
-        flash('Доступ запрещен. Только администраторы могут просматривать список всех матчей.', 'error')
-        return redirect(url_for('index'))
-        
     conn = get_db_connection()
     if not conn:
         flash('Database error', 'error')
         return redirect(url_for('index'))
         
     cursor = conn.cursor()
-    db.execute_query(cursor, 'SELECT * FROM matches ORDER BY created_at DESC LIMIT 50')
+    
+    if session.get('is_admin'):
+        # Admin: Show all matches
+        db.execute_query(cursor, '''
+            SELECT m.*, 
+            (SELECT COUNT(*) FROM match_players WHERE match_id = m.id) as player_count
+            FROM matches m 
+            ORDER BY m.created_at DESC LIMIT 50
+        ''')
+    elif 'user_id' in session:
+        # User: Show only their matches
+        db.execute_query(cursor, '''
+            SELECT m.*, 
+            (SELECT COUNT(*) FROM match_players WHERE match_id = m.id) as player_count
+            FROM matches m 
+            JOIN match_players mp ON m.id = mp.match_id
+            WHERE mp.user_id = ?
+            ORDER BY m.created_at DESC LIMIT 50
+        ''', (session['user_id'],))
+    else:
+        # Guest: Redirect or empty
+        conn.close()
+        flash('Пожалуйста, войдите в систему для просмотра истории матчей.', 'warning')
+        return redirect(url_for('login'))
+        
     matches = cursor.fetchall()
     conn.close()
     return render_template('matches.html', matches=matches)
