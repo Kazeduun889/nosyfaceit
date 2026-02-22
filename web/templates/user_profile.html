@@ -109,8 +109,10 @@
                              <span class="text-gray-400 text-xs">{{ match.created_at }}</span>
                          </div>
                          <div>
-                             {% if match.is_annulled %}
-                                 <span class="text-red-500 font-bold uppercase">ОТМЕНЕНО</span>
+                             {% if match.has_left %}
+                                 <span class="text-red-600 font-bold uppercase animate-pulse">ВЫШЕЛ</span>
+                             {% elif match.is_annulled %}
+                                 <span class="text-yellow-500 font-bold uppercase">АННУЛИРОВАНО</span>
                              {% elif match.status == 'cancelled' %}
                                  <span class="text-red-500 font-bold uppercase">ОТМЕНЕНО</span>
                              {% elif match.status == 'finished' %}
@@ -121,6 +123,8 @@
                                  {% endif %}
                              {% elif match.status == 'active' %}
                                  <span class="text-green-400 font-bold animate-pulse uppercase">ИДЕТ</span>
+                             {% elif match.status == 'disputed' %}
+                                 <span class="text-yellow-600 font-bold uppercase">СПОРНЫЙ</span>
                              {% else %}
                                  <span class="text-yellow-500 font-bold uppercase">{{ match.status }}</span>
                              {% endif %}

@@ -344,6 +344,8 @@ def init_db():
                 cursor.execute('ALTER TABLE match_players ADD COLUMN team INTEGER DEFAULT 1')
             if 'is_annulled' not in mp_columns:
                 cursor.execute('ALTER TABLE match_players ADD COLUMN is_annulled INTEGER DEFAULT 0')
+            if 'has_left' not in mp_columns:
+                cursor.execute('ALTER TABLE match_players ADD COLUMN has_left INTEGER DEFAULT 0')
         except Exception as e:
             print(f"SQLite Migration error: {e}")
     else:
@@ -370,8 +372,12 @@ def init_db():
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS map_picked TEXT')
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS last_action_time INTEGER DEFAULT 0')
             
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS warnings INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_expiration INTEGER DEFAULT 0')
+            
             execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS team INTEGER DEFAULT 1')
             execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS is_annulled INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS has_left INTEGER DEFAULT 0')
             
             execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS logo_url TEXT')
             execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS clan_elo INTEGER DEFAULT 1000')

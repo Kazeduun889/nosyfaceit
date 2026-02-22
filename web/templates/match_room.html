@@ -156,6 +156,13 @@
                 <div id="annul-status-{{ player.user_id }}" class="mb-4 {% if not player.is_annulled %}hidden{% endif %}">
                     <span class="bg-yellow-600 text-white text-xs px-2 py-1 rounded font-bold uppercase shadow-lg">АННУЛИРОВАН</span>
                 </div>
+
+                {% if player.has_left %}
+                <div class="mb-4">
+                     <span class="bg-red-600 text-white text-xs px-2 py-1 rounded font-bold uppercase shadow-lg animate-pulse">ВЫШЕЛ</span>
+                     <p class="text-red-500 text-xs mt-1">вышел из матча</p>
+                </div>
+                {% endif %}
                 
                 <!-- Spacer to push content to bottom -->
                 <div class="flex-grow"></div>
@@ -172,7 +179,7 @@
                      <div class="mt-auto inline-block bg-red-600 text-white px-4 py-2 rounded font-bold uppercase shadow-lg opacity-75">ОТМЕНЕН</div>
                 {% endif %}
                 
-                {% if match.status == 'active' and session.is_admin %}
+                {% if (match.status == 'active' or match.status == 'disputed') and session.is_admin %}
                     <div class="mt-auto w-full max-w-xs flex flex-col gap-2">
                         <button onclick="handleSetWinner(this)"
                                 data-player-id="{{ player.user_id }}"
@@ -344,14 +351,14 @@
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
 
+    let lastChatLength = -1;
+
     function renderChat(messages) {
-        const container = document.getElementById('chat-container');
-        // If we want to append, we need to know which ones are new.
-        // For simplicity and correctness with "reverse" order in current CSS (flex-col-reverse),
-        // we can just clear and rebuild or intelligently prepend.
-        // Current CSS: flex-col-reverse, so first child is bottom-most (newest).
-        // Messages coming from API are oldest first.
+        if (!messages) return;
+        if (messages.length === lastChatLength) return;
         
+        lastChatLength = messages.length;
+        const container = document.getElementById('chat-container');
         container.innerHTML = '';
         
         // Reverse for display because of flex-col-reverse
@@ -366,17 +373,21 @@
             if (msg.avatar_url) {
                 avatarHtml = `<img src="${msg.avatar_url}" class="w-8 h-8 rounded-full flex-shrink-0 object-cover">`;
             } else {
-                avatarHtml = `<div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs flex-shrink-0">${msg.nickname.charAt(0)}</div>`;
+                avatarHtml = `<div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs flex-shrink-0 text-white font-bold">${msg.nickname.charAt(0).toUpperCase()}</div>`;
             }
+            
+            // Format time correctly
+            const date = new Date(msg.created_at);
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
             
             div.innerHTML = `
                 ${avatarHtml}
-                <div class="bg-gray-800 p-2 rounded-lg max-w-xs ${isMe ? 'bg-blue-900' : ''}">
+                <div class="bg-gray-800 p-3 rounded-lg max-w-xs ${isMe ? 'bg-blue-900 border border-blue-800' : 'border border-gray-700'} shadow-sm">
                     <div class="text-xs text-gray-400 mb-1 flex justify-between gap-4">
                         <span class="font-bold ${isMe ? 'text-blue-300' : 'text-orange-300'}">${msg.nickname}</span>
-                        <span>${formatTime(msg.created_at)}</span>
+                        <span class="opacity-75">${timeStr}</span>
                     </div>
-                    <p class="text-sm text-white break-words">${msg.message}</p>
+                    <p class="text-sm text-white break-words leading-relaxed">${msg.message}</p>
                 </div>
             `;
             container.appendChild(div);
@@ -480,38 +491,47 @@
         }
     }
 
-    document.getElementById('chat-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const input = e.target.querySelector('input[name="message"]');
-        const message = input.value;
-        if (!message.trim()) return;
-        
-        try {
-            const response = await fetch(`/api/match/${matchId}/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: message })
-            });
+    // Use event delegation or ensure element exists
+    const chatForm = document.getElementById('chat-form');
+    if (chatForm) {
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = e.target.querySelector('input[name="message"]');
+            if (!input) return;
             
-            if (response.status === 403) {
-                 window.location.reload();
-                 return;
-            }
+            const message = input.value;
+            if (!message || !message.trim()) return;
+            
+            // Optimistic update (optional, but let's wait for server for now to be safe)
+            input.value = ''; // Clear immediately for better UX
+            
+            try {
+                const response = await fetch(`/api/match/${matchId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                if (response.status === 403) {
+                     window.location.reload();
+                     return;
+                }
 
-            const result = await response.json();
-            if (result.success) {
-                input.value = '';
-                pollMatch(); // Immediate update
-            } else {
-                alert(result.error);
+                const result = await response.json();
+                if (result.success) {
+                    pollMatch(); // Immediate update
+                } else {
+                    console.error('Chat error:', result.error);
+                    // alert(result.error); // Don't alert, just log
+                }
+            } catch (e) {
+                console.error('Chat submit error:', e);
             }
-        } catch (e) {
-            console.error(e);
-        }
-    });
+        });
+    }
 
     async function setWinner(playerId, nickname) {
-        if (!confirm('Confirm that ' + nickname + ' won?')) return;
+        if (!confirm('Подтвердите, что ' + nickname + ' победил?')) return;
         
         try {
             const response = await fetch(`/api/match/${matchId}/winner`, {
@@ -521,13 +541,13 @@
             });
             
             if (response.status === 403) {
-                 window.location.reload(); // Banned check
+                 window.location.reload(); 
                  return;
             }
 
             const result = await response.json();
             if (result.success) {
-                pollMatch(); // Immediate update
+                pollMatch(); 
             } else {
                 alert(result.error);
             }
@@ -541,7 +561,7 @@
         try {
             const response = await fetch(`/api/match/${matchId}`);
             if (response.status === 403) {
-                 window.location.reload(); // Reload to show ban page
+                 window.location.reload(); 
                  return;
             }
             const data = await response.json();
@@ -566,10 +586,10 @@
             renderChat(data.chat_messages);
             
             // Auto-reload if match finished or cancelled to show result
-            const isFinished = document.querySelector('.bg-gray-600.uppercase'); // Finished badge
-            const isCancelled = document.querySelector('.bg-red-600.uppercase'); // Cancelled badge
-            const isWinner = document.querySelector('.bg-green-600.uppercase.shadow-lg'); // Winner badge
-            const isDisputed = document.querySelector('.bg-yellow-600.uppercase'); // Disputed badge
+            const isFinished = document.querySelector('.bg-gray-600.uppercase'); 
+            const isCancelled = document.querySelector('.bg-red-600.uppercase'); 
+            const isWinner = document.querySelector('.bg-green-600.uppercase.shadow-lg'); 
+            const isDisputed = document.querySelector('.bg-yellow-600.uppercase'); 
 
             if (data.status === 'finished' && !isFinished && !isWinner) {
                  window.location.reload();
@@ -584,7 +604,7 @@
         }
     }
 
-    // Poll every 2 seconds
-    setInterval(pollMatch, 2000);
+    // Poll every 1 second (Instant updates)
+    setInterval(pollMatch, 1000);
 </script>
 {% endblock %}

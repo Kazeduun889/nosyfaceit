@@ -402,7 +402,7 @@ def matches():
     elif 'user_id' in session:
         # User: Show only their matches
         db.execute_query(cursor, '''
-            SELECT m.*, 
+            SELECT m.*, mp.has_left, mp.is_annulled,
             (SELECT COUNT(*) FROM match_players WHERE match_id = m.id) as player_count
             FROM matches m 
             JOIN match_players mp ON m.id = mp.match_id
@@ -475,7 +475,7 @@ def user_profile(nickname):
             
     # Get user's recent matches
     db.execute_query(cursor, '''
-        SELECT m.*, mp.team, mp.is_annulled, mp.accepted, 
+        SELECT m.*, mp.team, mp.is_annulled, mp.accepted, mp.has_left,
                (CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END) as is_win
         FROM matches m
         JOIN match_players mp ON m.id = mp.match_id
@@ -1420,7 +1420,7 @@ def match_room(match_id):
             return redirect(url_for('play'))
 
         db.execute_query(cursor, '''
-            SELECT u.*, mp.accepted, mp.team, mp.is_annulled, c.tag as clan_tag
+            SELECT u.*, mp.accepted, mp.team, mp.is_annulled, mp.has_left, c.tag as clan_tag
             FROM match_players mp 
             JOIN users u ON mp.user_id = u.user_id 
             LEFT JOIN clan_members cm ON cm.user_id = u.user_id
@@ -1693,8 +1693,9 @@ def leave_match(match_id):
             flash('Вы не участвуете в этом матче', 'error')
             return redirect(url_for('play'))
             
-        # Mark match as disputed
+        # Mark match as disputed and user as left
         db.execute_query(cursor, "UPDATE matches SET status = 'disputed' WHERE id = ?", (match_id,))
+        db.execute_query(cursor, "UPDATE match_players SET has_left = 1 WHERE match_id = ? AND user_id = ?", (match_id, session['user_id']))
         
         flash('Вы покинули матч. Матч помечен как СПОРНЫЙ. Администратор проверит ситуацию.', 'info')
         
@@ -1920,12 +1921,14 @@ def api_match_veto(match_id):
             
             if len(available_maps) == 1:
                 # Last map picked!
+                import time
+                current_time = int(time.time())
                 last_map = available_maps[0]
                 veto_data[last_map] = 'picked'
                 veto_json = json.dumps(veto_data) # Update json with picked status
                 
-                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ? WHERE id = ?',
-                             (veto_json, last_map, match_id))
+                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ?, last_action_time = ? WHERE id = ?',
+                             (veto_json, last_map, current_time, match_id))
             else:
                 # Switch turn
                 db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
@@ -1937,8 +1940,10 @@ def api_match_veto(match_id):
                         break
                 
                 if next_turn:
-                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ? WHERE id = ?',
-                                 (veto_json, next_turn, match_id))
+                    import time
+                    current_time = int(time.time())
+                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ?, last_action_time = ? WHERE id = ?',
+                                 (veto_json, next_turn, current_time, match_id))
                          
             conn.commit()
             

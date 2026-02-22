@@ -69,18 +69,25 @@
                                 Unban
                             </button>
                             {% else %}
-                            <div class="relative group">
-                                <button class="text-xs font-bold uppercase text-red-500 hover:text-red-400 btn-ban">
+                            <div class="relative group inline-block">
+                                <button class="text-xs font-bold uppercase text-red-500 hover:text-red-400 btn-ban px-2 py-1 border border-red-900 rounded bg-red-900/20">
                                     Ban Options ▼
                                 </button>
-                                <div class="hidden group-hover:block absolute right-0 bottom-full mb-2 w-48 bg-gray-900 border border-gray-700 rounded shadow-xl z-50">
-                                    <button onclick="banUser('{{ user.user_id }}', 30)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300">30 Минут</button>
-                                    <button onclick="banUser('{{ user.user_id }}', 60)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300">1 Час</button>
-                                    <button onclick="banUser('{{ user.user_id }}', 720)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300">12 Часов</button>
-                                    <button onclick="banUser('{{ user.user_id }}', 1440)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300">24 Часа</button>
-                                    <button onclick="banUser('{{ user.user_id }}', 0)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-red-500 font-bold border-t border-gray-700">НАВСЕГДА</button>
+                                <!-- z-index fixed to 50, position absolute to container -->
+                                <div class="hidden group-hover:block absolute right-0 top-full mt-1 w-48 bg-gray-900 border border-gray-600 rounded shadow-2xl z-50">
+                                    <button onclick="banUser('{{ user.user_id }}', 30)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300 border-b border-gray-800">30 Минут</button>
+                                    <button onclick="banUser('{{ user.user_id }}', 60)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300 border-b border-gray-800">1 Час</button>
+                                    <button onclick="banUser('{{ user.user_id }}', 720)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300 border-b border-gray-800">12 Часов</button>
+                                    <button onclick="banUser('{{ user.user_id }}', 1440)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-gray-300 border-b border-gray-800">24 Часа</button>
+                                    <button onclick="banUser('{{ user.user_id }}', 0)" class="block w-full text-left px-4 py-2 hover:bg-gray-800 text-sm text-red-500 font-bold">НАВСЕГДА</button>
                                 </div>
                             </div>
+                            
+                            <!-- Warning Button -->
+                            <button onclick="addWarning('{{ user.user_id }}')" 
+                                class="text-xs font-bold uppercase text-yellow-500 hover:text-yellow-400 px-2 py-1 border border-yellow-900 rounded bg-yellow-900/20 text-center ml-2">
+                                Warning ({{ user.warnings or 0 }}/3)
+                            </button>
                             {% endif %}
 
                             <!-- Make/Revoke Admin -->
