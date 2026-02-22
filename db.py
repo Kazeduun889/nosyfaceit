@@ -305,6 +305,10 @@ def init_db():
                 cursor.execute('ALTER TABLE users ADD COLUMN steam_url TEXT')
             if 'bio' not in columns:
                 cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
+            if 'warnings' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN warnings INTEGER DEFAULT 0')
+            if 'ban_expiration' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN ban_expiration INTEGER DEFAULT 0')
 
             cursor.execute("PRAGMA table_info(support_tickets)")
             st_columns = [column[1] for column in cursor.fetchall()]
@@ -329,6 +333,8 @@ def init_db():
                 cursor.execute('ALTER TABLE matches ADD COLUMN current_veto_turn INTEGER')
             if 'map_picked' not in m_columns:
                 cursor.execute('ALTER TABLE matches ADD COLUMN map_picked TEXT')
+            if 'last_action_time' not in m_columns:
+                cursor.execute('ALTER TABLE matches ADD COLUMN last_action_time INTEGER DEFAULT 0')
 
             cursor.execute('UPDATE users SET level = 4 WHERE elo = 1000')
 
@@ -336,6 +342,8 @@ def init_db():
             mp_columns = [column[1] for column in cursor.fetchall()]
             if 'team' not in mp_columns:
                 cursor.execute('ALTER TABLE match_players ADD COLUMN team INTEGER DEFAULT 1')
+            if 'is_annulled' not in mp_columns:
+                cursor.execute('ALTER TABLE match_players ADD COLUMN is_annulled INTEGER DEFAULT 0')
         except Exception as e:
             print(f"SQLite Migration error: {e}")
     else:
@@ -351,6 +359,8 @@ def init_db():
             execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS missed_games INTEGER DEFAULT 0')
             execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip INTEGER DEFAULT 0')
             execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_until TIMESTAMP')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS warnings INTEGER DEFAULT 0')
+            execute_query(cursor, 'ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_expiration INTEGER DEFAULT 0')
             
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team1_score INTEGER DEFAULT 0')
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS team2_score INTEGER DEFAULT 0')
@@ -358,8 +368,10 @@ def init_db():
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS veto_status TEXT')
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS current_veto_turn BIGINT')
             execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS map_picked TEXT')
+            execute_query(cursor, 'ALTER TABLE matches ADD COLUMN IF NOT EXISTS last_action_time INTEGER DEFAULT 0')
             
             execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS team INTEGER DEFAULT 1')
+            execute_query(cursor, 'ALTER TABLE match_players ADD COLUMN IF NOT EXISTS is_annulled INTEGER DEFAULT 0')
             
             execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS logo_url TEXT')
             execute_query(cursor, 'ALTER TABLE clans ADD COLUMN IF NOT EXISTS clan_elo INTEGER DEFAULT 1000')
