@@ -1326,43 +1326,7 @@ def leave_queue():
     return redirect(url_for('play'))
 
 
-@app.route('/api/admin/user/<int:user_id>/ban', methods=['POST'])
-def api_admin_ban_user(user_id):
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 403
-        
-    try:
-        data = request.json
-        is_banned = data.get('is_banned', True)
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        db.execute_query(cursor, 'UPDATE users SET is_banned = ? WHERE user_id = ?', (is_banned, user_id))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'success': True, 'is_banned': is_banned})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/user/<int:user_id>/role', methods=['POST'])
-def api_admin_set_role(user_id):
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Unauthorized'}), 403
-        
-    try:
-        data = request.json
-        role = data.get('role', 'user')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        db.execute_query(cursor, 'UPDATE users SET role = ? WHERE user_id = ?', (role, user_id))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'success': True, 'role': role})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/match/<int:match_id>/winner', methods=['POST'])
 def api_match_set_winner(match_id):
@@ -1729,28 +1693,10 @@ def leave_match(match_id):
             flash('Вы не участвуете в этом матче', 'error')
             return redirect(url_for('play'))
             
-        # Surrender match
-        # 1. Identify winner (the other player)
-        db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ? AND user_id != ?', (match_id, session['user_id']))
-        opponent = cursor.fetchone()
+        # Mark match as disputed
+        db.execute_query(cursor, "UPDATE matches SET status = 'disputed' WHERE id = ?", (match_id,))
         
-        if opponent:
-            winner_id = opponent['user_id']
-            loser_id = session['user_id']
-            
-            # 2. Update ELO
-            # Winner +25, Loser -25
-            db.execute_query(cursor, 'UPDATE users SET elo = elo + 25, wins = wins + 1, matches = matches + 1 WHERE user_id = ?', (winner_id,))
-            db.execute_query(cursor, 'UPDATE users SET elo = elo - 25, matches = matches + 1 WHERE user_id = ?', (loser_id,))
-            
-            # 3. Finish match
-            db.execute_query(cursor, "UPDATE matches SET status = 'finished', winner_team = ? WHERE id = ?", (winner_id, match_id))
-            
-            flash('Вы сдались. Вам засчитано поражение (-25 ELO).', 'warning')
-        else:
-             # Should not happen in 1v1, but if so, just cancel
-             db.execute_query(cursor, "UPDATE matches SET status = 'cancelled' WHERE id = ?", (match_id,))
-             flash('Матч отменен (соперник не найден).', 'info')
+        flash('Вы покинули матч. Матч помечен как СПОРНЫЙ. Администратор проверит ситуацию.', 'info')
         
         conn.commit()
         conn.close()
