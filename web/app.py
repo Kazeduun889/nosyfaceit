@@ -1992,8 +1992,8 @@ def api_match_chat(match_id):
         log_error(e, "/api/match/chat")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/ban_user', methods=['POST'])
-def api_admin_ban_user():
+@app.route('/api/admin/ban_user_v2', methods=['POST'])
+def api_admin_ban_user_v2():
     if not session.get('is_admin'):
         return jsonify({'error': 'Unauthorized'}), 403
         
@@ -2025,11 +2025,11 @@ def api_admin_ban_user():
         conn.close()
         return jsonify({'success': True, 'is_banned': is_banned})
     except Exception as e:
-        log_error(e, "/api/admin/ban_user")
+        log_error(e, "/api/admin/ban_user_v2")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/warn_user', methods=['POST'])
-def api_warn_user():
+@app.route('/api/admin/warn_user_v2', methods=['POST'])
+def api_warn_user_v2():
     if 'user_id' not in session or not session.get('is_admin'):
         return jsonify({'error': 'Unauthorized'}), 403
     
@@ -2067,11 +2067,11 @@ def api_warn_user():
         conn.close()
         return jsonify({'success': True, 'message': message, 'warnings': current_warnings})
     except Exception as e:
-        log_error(e, "/api/admin/warn_user")
+        log_error(e, "/api/admin/warn_user_v2")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/admin/set_role', methods=['POST'])
-def api_admin_set_role():
+@app.route('/api/admin/set_role_v2', methods=['POST'])
+def api_admin_set_role_v2():
     if not session.get('is_admin'):
         return jsonify({'error': 'Unauthorized'}), 403
         
@@ -2091,9 +2091,9 @@ def api_admin_set_role():
         conn.close()
         return jsonify({'success': True, 'is_admin': is_admin})
     except Exception as e:
-        log_error(e, "/api/admin/set_role")
+        log_error(e, "/api/admin/set_role_v2")
         return jsonify({'error': str(e)}), 500
 
-# force deploy
+# force deploy check
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

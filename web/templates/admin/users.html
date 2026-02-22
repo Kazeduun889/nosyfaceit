@@ -116,7 +116,7 @@ async function banUser(userId, durationMinutes) {
     if (!confirm(`Выдать бан пользователю? Длительность: ${durationMinutes === 0 ? 'НАВСЕГДА' : durationMinutes + ' минут'}`)) return;
 
     try {
-        const response = await fetch('/api/admin/ban_user', {
+        const response = await fetch('/api/admin/ban_user_v2', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, is_banned: true, duration: durationMinutes })
@@ -138,7 +138,7 @@ async function addWarning(userId) {
     if (!confirm('Выдать предупреждение пользователю? (3 предупреждения = бан на 1 час)')) return;
 
     try {
-        const response = await fetch('/api/admin/warn_user', {
+        const response = await fetch('/api/admin/warn_user_v2', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId })
@@ -167,12 +167,12 @@ async function toggleBan(userId, isCurrentlyBanned) {
     }
 
     try {
-        const response = await fetch('/api/admin/ban_user', {
+        const response = await fetch('/api/admin/ban_user_v2', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ user_id: userId, action: action })
+            body: JSON.stringify({ user_id: userId, is_banned: action === 'ban' })
         });
         
         if (response.status === 403) {
@@ -200,7 +200,7 @@ async function toggleAdmin(userId, isCurrentlyAdmin) {
     if (role === 'user' && !confirm('Remove admin rights?')) return;
 
     try {
-        const response = await fetch('/api/admin/set_role', {
+        const response = await fetch('/api/admin/set_role_v2', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
