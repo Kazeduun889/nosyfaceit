@@ -29,9 +29,7 @@
                         <td class="px-6 py-4 text-gray-400">{{ clan.clan_elo }}</td>
                         <td class="px-6 py-4">{{ clan.matches_played }}</td>
                         <td class="px-6 py-4">
-                            <form action="{{ url_for('admin_delete_clan', clan_id=clan.id) }}" method="POST" class="inline">
-                                <button type="submit" class="text-red-500 hover:text-red-400 text-sm font-bold" onclick="return confirm('Are you sure you want to delete this clan? This cannot be undone.')">DELETE</button>
-                            </form>
+                            <button onclick="deleteClan({{ clan.id }})" class="text-red-500 hover:text-red-400 text-sm font-bold">DELETE</button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -40,4 +38,35 @@
         </div>
     </div>
 </div>
+
+<script>
+async function deleteClan(clanId) {
+    if (!confirm('Are you sure you want to delete this clan? This cannot be undone.')) return;
+
+    try {
+        const response = await fetch(`/api/admin/clan/${clanId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (response.status === 403) {
+             window.location.reload();
+             return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success) {
+             window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Request failed');
+    }
+}
+</script>
 {% endblock %}

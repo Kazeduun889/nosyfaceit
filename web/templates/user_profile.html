@@ -96,10 +96,41 @@
         </div>
         {% endif %}
 
-        <!-- Recent Matches (Optional placeholder) -->
+        <!-- Recent Matches -->
         <div class="px-8 pb-8">
              <h3 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Последние матчи</h3>
-             <p class="text-gray-500 italic">История матчей пока недоступна в этом разделе.</p>
+             {% if recent_matches %}
+                 <div class="space-y-2">
+                 {% for match in recent_matches %}
+                     <a href="{{ url_for('match_detail', match_id=match.id) }}" class="block bg-gray-700 hover:bg-gray-600 p-3 rounded flex justify-between items-center transition">
+                         <div class="flex items-center space-x-4">
+                             <span class="text-gray-400 font-mono">#{{ match.id }}</span>
+                             <span class="text-white font-bold">{{ match.map_picked or 'Карта не выбрана' }}</span>
+                             <span class="text-gray-400 text-xs">{{ match.created_at }}</span>
+                         </div>
+                         <div>
+                             {% if match.is_annulled %}
+                                 <span class="text-red-500 font-bold uppercase">ОТМЕНЕНО</span>
+                             {% elif match.status == 'cancelled' %}
+                                 <span class="text-red-500 font-bold uppercase">ОТМЕНЕНО</span>
+                             {% elif match.status == 'finished' %}
+                                 {% if match.is_win %}
+                                     <span class="text-green-500 font-bold uppercase">ПОБЕДА</span>
+                                 {% else %}
+                                     <span class="text-red-400 font-bold uppercase">ПОРАЖЕНИЕ</span>
+                                 {% endif %}
+                             {% elif match.status == 'active' %}
+                                 <span class="text-green-400 font-bold animate-pulse uppercase">ИДЕТ</span>
+                             {% else %}
+                                 <span class="text-yellow-500 font-bold uppercase">{{ match.status }}</span>
+                             {% endif %}
+                         </div>
+                     </a>
+                 {% endfor %}
+                 </div>
+             {% else %}
+                 <p class="text-gray-500 italic">Матчей не найдено.</p>
+             {% endif %}
         </div>
 
     </div>

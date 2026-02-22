@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g, send_file, jsonify
 import os
 import sys
 import json
@@ -62,6 +62,49 @@ def log_error(e, context=""):
     import traceback
     logging.error(traceback.format_exc())
 
+
+@app.before_request
+def check_ban():
+    if not request.endpoint or 'static' in request.endpoint:
+        return
+    
+    if 'user_id' in session:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            # Select is_admin instead of role, as role column does not exist
+            db.execute_query(cursor, 'SELECT is_banned, is_admin, ban_expiration FROM users WHERE user_id = ?', (session['user_id'],))
+            user = cursor.fetchone()
+            conn.close()
+            
+            if user:
+                # Update session admin status (for immediate admin grant effect)
+                session['is_admin'] = bool(user['is_admin'])
+                
+                # Check ban expiration
+                if user['is_banned']:
+                    import time
+                    current_time = int(time.time())
+                    ban_expiration = user.get('ban_expiration', 0)
+                    
+                    if ban_expiration and ban_expiration > 0 and current_time > ban_expiration:
+                         # Ban expired
+                         conn = get_db_connection()
+                         cursor = conn.cursor()
+                         db.execute_query(cursor, 'UPDATE users SET is_banned = 0, ban_expiration = 0 WHERE user_id = ?', (session['user_id'],))
+                         conn.commit()
+                         conn.close()
+                         # User is unbanned, continue
+                    else:
+                        # Allow logout to clear session
+                        if request.endpoint == 'logout':
+                            return
+                            
+                        # For API requests, return 403 so frontend can handle it
+                        if request.path.startswith('/api/'):
+                            return jsonify({'error': 'User is banned', 'is_banned': True}), 403
+                            
+                        return render_template('banned.html', ban_expiration=ban_expiration)
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -430,8 +473,20 @@ def user_profile(nickname):
         if res:
             friend_status = (res['user_id'], res['status']) # (requester_id, status)
             
+    # Get user's recent matches
+    db.execute_query(cursor, '''
+        SELECT m.*, mp.team, mp.is_annulled, mp.accepted, 
+               (CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END) as is_win
+        FROM matches m
+        JOIN match_players mp ON m.id = mp.match_id
+        WHERE mp.user_id = ?
+        ORDER BY m.created_at DESC
+        LIMIT 10
+    ''', (user['user_id'],))
+    recent_matches = cursor.fetchall()
+            
     conn.close()
-    return render_template('user_profile.html', user=user, friend_status=friend_status)
+    return render_template('user_profile.html', user=user, friend_status=friend_status, recent_matches=recent_matches)
 
 @app.route('/friends')
 def friends_list():
@@ -1199,12 +1254,14 @@ def join_queue():
             
             # Create match
             match_id = None
+            import time
+            current_time = int(time.time())
             try:
                 if IS_POSTGRES:
-                    db.execute_query(cursor, "INSERT INTO matches (mode, status) VALUES ('1x1', 'active') RETURNING id")
+                    db.execute_query(cursor, "INSERT INTO matches (mode, status, last_action_time) VALUES ('1x1', 'active', ?) RETURNING id", (current_time,))
                     match_id = cursor.fetchone()[0]
                 else:
-                    db.execute_query(cursor, "INSERT INTO matches (mode, status) VALUES ('1x1', 'active')")
+                    db.execute_query(cursor, "INSERT INTO matches (mode, status, last_action_time) VALUES ('1x1', 'active', ?)", (current_time,))
                     match_id = cursor.lastrowid
             except Exception as e:
                 log_error(e, "create_match_failed")
@@ -1269,6 +1326,115 @@ def leave_queue():
     return redirect(url_for('play'))
 
 
+@app.route('/api/admin/user/<int:user_id>/ban', methods=['POST'])
+def api_admin_ban_user(user_id):
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    try:
+        data = request.json
+        is_banned = data.get('is_banned', True)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        db.execute_query(cursor, 'UPDATE users SET is_banned = ? WHERE user_id = ?', (is_banned, user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'is_banned': is_banned})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/user/<int:user_id>/role', methods=['POST'])
+def api_admin_set_role(user_id):
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    try:
+        data = request.json
+        role = data.get('role', 'user')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        db.execute_query(cursor, 'UPDATE users SET role = ? WHERE user_id = ?', (role, user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'role': role})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/match/<int:match_id>/winner', methods=['POST'])
+def api_match_set_winner(match_id):
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    try:
+        data = request.json
+        winner_id = data.get('winner_id')
+        
+        conn = get_db_connection()
+        if not conn: return jsonify({'error': 'Database error'}), 500
+        
+        cursor = conn.cursor()
+        
+        # Verify match exists and is active
+        db.execute_query(cursor, 'SELECT * FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        
+        if not match or match['status'] != 'active':
+            conn.close()
+            return jsonify({'error': 'Match not active or not found'}), 400
+            
+        # Verify winner is in match
+        db.execute_query(cursor, 'SELECT team FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, winner_id))
+        winner_player = cursor.fetchone()
+        
+        if not winner_player:
+            conn.close()
+            return jsonify({'error': 'Winner not in match'}), 400
+            
+        winner_team = winner_player['team']
+        
+        # Update match status
+        db.execute_query(cursor, "UPDATE matches SET status = 'finished', winner_team = ? WHERE id = ?", (winner_id, match_id))
+        
+        # Update ELO (simplified)
+        db.execute_query(cursor, 'SELECT user_id, team, is_annulled FROM match_players WHERE match_id = ?', (match_id,))
+        players = cursor.fetchall()
+        
+        for p in players:
+            if p['is_annulled']:
+                continue
+                
+            change = 25 if p['user_id'] == int(winner_id) else -25
+            db.execute_query(cursor, 'UPDATE users SET elo = elo + ? WHERE user_id = ?', (change, p['user_id']))
+            
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(e, "/api/match/winner")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/clan/<int:clan_id>/delete', methods=['POST'])
+def api_admin_delete_clan(clan_id):
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        db.execute_query(cursor, 'DELETE FROM clan_members WHERE clan_id = ?', (clan_id,))
+        db.execute_query(cursor, 'DELETE FROM clans WHERE id = ?', (clan_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(e, "/api/admin/clan/delete")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/match/<int:match_id>')
 def match_room(match_id):
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -1290,7 +1456,7 @@ def match_room(match_id):
             return redirect(url_for('play'))
 
         db.execute_query(cursor, '''
-            SELECT u.*, mp.accepted, mp.team, c.tag as clan_tag
+            SELECT u.*, mp.accepted, mp.team, mp.is_annulled, c.tag as clan_tag
             FROM match_players mp 
             JOIN users u ON mp.user_id = u.user_id 
             LEFT JOIN clan_members cm ON cm.user_id = u.user_id
@@ -1348,6 +1514,114 @@ def match_room(match_id):
         flash(f"Error loading match room: {e}", "error")
         return redirect(url_for('play'))
 
+
+@app.route('/api/match/<int:match_id>/veto', methods=['POST'])
+def api_match_veto(match_id):
+    if 'user_id' not in session: 
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        data = request.json
+        map_name = data.get('map_name')
+        
+        conn = get_db_connection()
+        if not conn: 
+            return jsonify({'error': 'Database error'}), 500
+        
+        cursor = conn.cursor()
+        
+        db.execute_query(cursor, 'SELECT * FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        
+        if not match or match['status'] != 'active':
+            conn.close()
+            return jsonify({'error': 'Match not active'}), 400
+            
+        # Check turn
+        if str(match['current_veto_turn']) != str(session['user_id']):
+            conn.close()
+            return jsonify({'error': 'Not your turn'}), 403
+            
+        veto_data = {}
+        if match['veto_status']:
+             if isinstance(match['veto_status'], str):
+                 try:
+                    veto_data = json.loads(match['veto_status'])
+                 except:
+                    veto_data = {}
+             else:
+                 veto_data = match['veto_status']
+        
+        if veto_data.get(map_name) == 'available':
+            # Ban map
+            veto_data[map_name] = 'banned'
+            
+            # Check remaining maps
+            available_maps = [m for m, s in veto_data.items() if s == 'available']
+            
+            veto_json = json.dumps(veto_data)
+            
+            if len(available_maps) == 1:
+                # Last map picked!
+                last_map = available_maps[0]
+                veto_data[last_map] = 'picked'
+                veto_json = json.dumps(veto_data)
+                
+                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ? WHERE id = ?',
+                             (veto_json, last_map, match_id))
+            else:
+                # Switch turn
+                db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
+                players = cursor.fetchall()
+                next_turn = None
+                
+                # Find current index
+                current_idx = -1
+                for i, p in enumerate(players):
+                    if str(p['user_id']) == str(session['user_id']):
+                        current_idx = i
+                        break
+                
+                # Next player (simple round robin for 2 players, logic matches original but safer)
+                next_idx = (current_idx + 1) % len(players)
+                next_turn = players[next_idx]['user_id']
+                
+                if next_turn:
+                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ? WHERE id = ?',
+                                 (veto_json, next_turn, match_id))
+                         
+            conn.commit()
+            
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(e, "/api/match_veto")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/match/<int:match_id>/chat', methods=['POST'])
+def api_match_chat(match_id):
+    if 'user_id' not in session: 
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        data = request.json
+        message = data.get('message')
+        
+        if message and len(message.strip()) > 0:
+            conn = get_db_connection()
+            if not conn: 
+                return jsonify({'error': 'Database error'}), 500
+            
+            cursor = conn.cursor()
+            db.execute_query(cursor, 'INSERT INTO match_chat (match_id, user_id, message) VALUES (?, ?, ?)',
+                         (match_id, session['user_id'], message.strip()))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True})
+        return jsonify({'error': 'Empty message'}), 400
+    except Exception as e:
+        log_error(e, "/api/match_chat")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/match/<int:match_id>/chat', methods=['POST'])
 def match_chat(match_id):
@@ -1422,8 +1696,10 @@ def match_veto(match_id):
                 veto_data[last_map] = 'picked'
                 veto_json = json.dumps(veto_data) # Update json with picked status
                 
-                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ? WHERE id = ?',
-                             (veto_json, last_map, match_id))
+                import time
+                current_time = int(time.time())
+                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ?, last_action_time = ? WHERE id = ?',
+                             (veto_json, last_map, current_time, match_id))
             else:
                 # Switch turn
                 db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
@@ -1435,8 +1711,10 @@ def match_veto(match_id):
                         break
                 
                 if next_turn:
-                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ? WHERE id = ?',
-                                 (veto_json, next_turn, match_id))
+                    import time
+                    current_time = int(time.time())
+                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ?, last_action_time = ? WHERE id = ?',
+                                 (veto_json, next_turn, current_time, match_id))
                          
             conn.commit()
             
@@ -1476,25 +1754,21 @@ def submit_match_result(match_id):
         # Verify user is admin
         if not session.get('is_admin'):
              conn.close()
-             flash('Only admins can submit match results', 'error')
+             flash('Только администраторы могут подтверждать результаты', 'error')
              return redirect(url_for('match_room', match_id=match_id))
-
-    # Verify user is part of match - NO LONGER NEEDED IF ADMIN ONLY
-    # db.execute_query(cursor, 'SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, session['user_id']))
-    # is_participant = cursor.fetchone()
-    # if not is_participant:
-    #      conn.close()
-    #      flash('You are not a participant in this match', 'error')
-    #      return redirect(url_for('match_room', match_id=match_id))
 
         db.execute_query(cursor, "UPDATE matches SET status = 'finished', winner_team = ? WHERE id = ?", (winner_id, match_id))
         
         # Update ELO (simplified)
         # Winner +25, Loser -25
-        db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
+        # Check for annulled players
+        db.execute_query(cursor, 'SELECT user_id, is_annulled FROM match_players WHERE match_id = ?', (match_id,))
         players = cursor.fetchall()
         
         for p in players:
+            if p['is_annulled']:
+                continue # Skip ELO update for annulled players
+                
             if str(p['user_id']) == str(winner_id):
                 db.execute_query(cursor, 'UPDATE users SET elo = elo + 25, wins = wins + 1, matches = matches + 1 WHERE user_id = ?', (p['user_id'],))
             else:
@@ -1506,9 +1780,479 @@ def submit_match_result(match_id):
         flash('Результат матча подтвержден!', 'success')
     except Exception as e:
         log_error(e, "/submit_match_result")
-        flash(f"Error submitting result: {e}", "error")
+        flash(f"Ошибка при подтверждении результата: {e}", "error")
         
     return redirect(url_for('match_room', match_id=match_id))
+
+@app.route('/match/<int:match_id>/cancel', methods=['POST'])
+def cancel_match(match_id):
+    import db
+    if 'user_id' not in session or not session.get('is_admin'):
+        flash('Доступ запрещен', 'error')
+        return redirect(url_for('index'))
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Set match status to cancelled
+        db.execute_query(cursor, "UPDATE matches SET status = 'cancelled' WHERE id = ?", (match_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        flash('Матч был отменен. ELO не изменено.', 'success')
+    except Exception as e:
+        log_error(e, "/cancel_match")
+        flash(f"Ошибка при отмене матча: {e}", 'error')
+        
+    return redirect(url_for('match_room', match_id=match_id))
+
+@app.route('/match/<int:match_id>/leave', methods=['POST'])
+def leave_match(match_id):
+    import db
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if user is in match and match is active
+        db.execute_query(cursor, 'SELECT * FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        
+        if not match or match['status'] != 'active':
+            conn.close()
+            flash('Матч не активен', 'error')
+            return redirect(url_for('play'))
+            
+        db.execute_query(cursor, 'SELECT * FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, session['user_id']))
+        player = cursor.fetchone()
+        
+        if not player:
+            conn.close()
+            flash('Вы не участвуете в этом матче', 'error')
+            return redirect(url_for('play'))
+            
+        # Surrender match
+        # 1. Identify winner (the other player)
+        db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ? AND user_id != ?', (match_id, session['user_id']))
+        opponent = cursor.fetchone()
+        
+        if opponent:
+            winner_id = opponent['user_id']
+            loser_id = session['user_id']
+            
+            # 2. Update ELO
+            # Winner +25, Loser -25
+            db.execute_query(cursor, 'UPDATE users SET elo = elo + 25, wins = wins + 1, matches = matches + 1 WHERE user_id = ?', (winner_id,))
+            db.execute_query(cursor, 'UPDATE users SET elo = elo - 25, matches = matches + 1 WHERE user_id = ?', (loser_id,))
+            
+            # 3. Finish match
+            db.execute_query(cursor, "UPDATE matches SET status = 'finished', winner_team = ? WHERE id = ?", (winner_id, match_id))
+            
+            flash('Вы сдались. Вам засчитано поражение (-25 ELO).', 'warning')
+        else:
+             # Should not happen in 1v1, but if so, just cancel
+             db.execute_query(cursor, "UPDATE matches SET status = 'cancelled' WHERE id = ?", (match_id,))
+             flash('Матч отменен (соперник не найден).', 'info')
+        
+        conn.commit()
+        conn.close()
+        
+        return redirect(url_for('play'))
+    except Exception as e:
+        log_error(e, "/leave_match")
+        flash(f"Ошибка при выходе из матча: {e}", 'error')
+        return redirect(url_for('match_room', match_id=match_id))
+
+@app.route('/api/match/<int:match_id>/annul_player', methods=['POST'])
+def api_annul_player(match_id):
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    data = request.get_json()
+    player_id = data.get('user_id')
+    
+    if not player_id:
+        return jsonify({'error': 'Missing user_id'}), 400
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Toggle is_annulled
+        db.execute_query(cursor, 'SELECT is_annulled FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, player_id))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Player not found in match'}), 404
+            
+        new_status = 0 if row['is_annulled'] else 1
+        db.execute_query(cursor, 'UPDATE match_players SET is_annulled = ? WHERE match_id = ? AND user_id = ?', (new_status, match_id, player_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'is_annulled': new_status})
+    except Exception as e:
+        log_error(e, "/api/annul_player")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/match/<int:match_id>')
+def api_match_status(match_id):
+    if 'user_id' not in session: 
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database error'}), 500
+            
+        cursor = conn.cursor()
+        
+        # Get match info
+        db.execute_query(cursor, 'SELECT * FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        
+        if not match:
+            conn.close()
+            return jsonify({'error': 'Match not found'}), 404
+            
+        # Parse veto status
+        veto_data = {}
+        if match['veto_status']:
+            if isinstance(match['veto_status'], str):
+                try:
+                    veto_data = json.loads(match['veto_status'])
+                except:
+                    veto_data = {}
+            else:
+                veto_data = match['veto_status']
+        
+        # Check for timeout (30 seconds)
+        remaining_time = 30
+        if match['status'] == 'active' and not match['map_picked']:
+            import time
+            current_time = int(time.time())
+            last_action_time = match['last_action_time']
+            
+            # If last_action_time is missing (for old matches), set it to now
+            if not last_action_time:
+                last_action_time = current_time
+                db.execute_query(cursor, 'UPDATE matches SET last_action_time = ? WHERE id = ?', (current_time, match_id))
+                conn.commit()
+            
+            remaining_time = 30 - (current_time - last_action_time)
+            
+            if remaining_time <= 0:
+                # Timeout! Perform random action
+                if not veto_data:
+                    # Initialize if empty
+                    veto_data = {m: 'available' for m in MAP_POOL}
+                
+                available_maps = [m for m, s in veto_data.items() if s == 'available']
+                if available_maps:
+                    import random
+                    map_to_ban = random.choice(available_maps)
+                    veto_data[map_to_ban] = 'banned'
+                    
+                    # Check remaining
+                    available_maps = [m for m, s in veto_data.items() if s == 'available']
+                    veto_json = json.dumps(veto_data)
+                    
+                    if len(available_maps) == 1:
+                        # Last map picked
+                        last_map = available_maps[0]
+                        veto_data[last_map] = 'picked'
+                        veto_json = json.dumps(veto_data)
+                        db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ?, last_action_time = ? WHERE id = ?', (veto_json, last_map, current_time, match_id))
+                        match['map_picked'] = last_map
+                        # match['veto_status'] updated implicitly for response via veto_data
+                    else:
+                        # Switch turn
+                        current_turn = match['current_veto_turn']
+                        db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
+                        players = cursor.fetchall()
+                        next_turn = None
+                        
+                        # If current_turn is not set, pick first player
+                        if not current_turn and players:
+                             current_turn = players[0]['user_id']
+                             
+                        for p in players:
+                            if str(p['user_id']) != str(current_turn):
+                                next_turn = p['user_id']
+                                break
+                        
+                        if next_turn:
+                            db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ?, last_action_time = ? WHERE id = ?', (veto_json, next_turn, current_time, match_id))
+                            match['current_veto_turn'] = next_turn
+                    
+                    conn.commit()
+                    remaining_time = 30 # Reset timer for next turn
+
+        # Get chat messages
+        db.execute_query(cursor, '''
+            SELECT mc.id, mc.message, mc.created_at, mc.user_id, u.nickname, u.avatar_url 
+            FROM match_chat mc
+            JOIN users u ON mc.user_id = u.user_id
+            WHERE mc.match_id = ?
+            ORDER BY mc.created_at ASC
+        ''', (match_id,))
+        chat_rows = cursor.fetchall()
+        
+        chat_messages = []
+        for row in chat_rows:
+            chat_messages.append({
+                'id': row['id'],
+                'user_id': row['user_id'],
+                'nickname': row['nickname'],
+                'avatar_url': row['avatar_url'],
+                'message': row['message'],
+                'created_at': str(row['created_at'])
+            })
+            
+        conn.close()
+        
+        return jsonify({
+            'status': match['status'],
+            'veto_status': veto_data,
+            'current_veto_turn': match['current_veto_turn'],
+            'map_picked': match['map_picked'],
+            'winner_team': match['winner_team'],
+            'chat_messages': chat_messages,
+            'current_user_id': session['user_id'],
+            'remaining_time': remaining_time
+        })
+        
+    except Exception as e:
+        log_error(e, "/api/match")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/match/<int:match_id>/veto', methods=['POST'])
+def api_match_veto(match_id):
+    if 'user_id' not in session: 
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        data = request.get_json()
+        map_name = data.get('map_name')
+        
+        conn = get_db_connection()
+        if not conn: 
+            return jsonify({'error': 'Database error'}), 500
+        
+        cursor = conn.cursor()
+        
+        db.execute_query(cursor, 'SELECT * FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        
+        if not match or match['status'] != 'active':
+            conn.close()
+            return jsonify({'error': 'Match not active'}), 400
+            
+        # Check turn
+        if str(match['current_veto_turn']) != str(session['user_id']):
+            conn.close()
+            return jsonify({'error': 'Not your turn'}), 400
+            
+        veto_data = {}
+        if match['veto_status']:
+             if isinstance(match['veto_status'], str):
+                 try:
+                     veto_data = json.loads(match['veto_status'])
+                 except:
+                     veto_data = {}
+             else:
+                 veto_data = match['veto_status']
+        
+        if veto_data.get(map_name) == 'available':
+            # Ban map
+            veto_data[map_name] = 'banned'
+            
+            # Check remaining maps
+            available_maps = [m for m, s in veto_data.items() if s == 'available']
+            
+            veto_json = json.dumps(veto_data)
+            
+            if len(available_maps) == 1:
+                # Last map picked!
+                last_map = available_maps[0]
+                veto_data[last_map] = 'picked'
+                veto_json = json.dumps(veto_data) # Update json with picked status
+                
+                db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, map_picked = ? WHERE id = ?',
+                             (veto_json, last_map, match_id))
+            else:
+                # Switch turn
+                db.execute_query(cursor, 'SELECT user_id FROM match_players WHERE match_id = ?', (match_id,))
+                players = cursor.fetchall()
+                next_turn = None
+                for p in players:
+                    if str(p['user_id']) != str(session['user_id']):
+                        next_turn = p['user_id']
+                        break
+                
+                if next_turn:
+                    db.execute_query(cursor, 'UPDATE matches SET veto_status = ?, current_veto_turn = ? WHERE id = ?',
+                                 (veto_json, next_turn, match_id))
+                         
+            conn.commit()
+            
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(e, "/api/match/veto")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/match/<int:match_id>/chat', methods=['POST'])
+def api_match_chat(match_id):
+    if 'user_id' not in session: 
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    try:
+        data = request.get_json()
+        message = data.get('message')
+        
+        if not message:
+            return jsonify({'error': 'Empty message'}), 400
+            
+        conn = get_db_connection()
+        if not conn: 
+            return jsonify({'error': 'Database error'}), 500
+        
+        cursor = conn.cursor()
+        
+        # Verify match exists
+        db.execute_query(cursor, 'SELECT 1 FROM matches WHERE id = ?', (match_id,))
+        match = cursor.fetchone()
+        if not match:
+            conn.close()
+            return jsonify({'error': 'Match not found'}), 404
+            
+        # Verify user is participant or admin
+        is_participant = False
+        db.execute_query(cursor, 'SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?', (match_id, session['user_id']))
+        if cursor.fetchone():
+            is_participant = True
+            
+        if not is_participant and not session.get('is_admin'):
+            conn.close()
+            return jsonify({'error': 'Access denied'}), 403
+            
+        db.execute_query(cursor, 'INSERT INTO match_chat (match_id, user_id, message) VALUES (?, ?, ?)',
+                     (match_id, session['user_id'], message.strip()))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(e, "/api/match/chat")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/ban_user', methods=['POST'])
+def api_admin_ban_user():
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    data = request.get_json()
+    user_id = data.get('user_id')
+    # Support both old format (action='ban'/'unban') and new format (is_banned=True/False)
+    action = data.get('action') 
+    is_banned = data.get('is_banned')
+    duration = data.get('duration', 0) # in minutes
+    
+    if is_banned is None and action:
+        is_banned = (action == 'ban')
+        
+    if not user_id or is_banned is None:
+        return jsonify({'error': 'Invalid data'}), 400
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        ban_expiration = 0
+        if is_banned and duration > 0:
+            import time
+            ban_expiration = int(time.time()) + (duration * 60)
+            
+        db.execute_query(cursor, 'UPDATE users SET is_banned = ?, ban_expiration = ? WHERE user_id = ?', 
+                         (1 if is_banned else 0, ban_expiration, user_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'is_banned': is_banned})
+    except Exception as e:
+        log_error(e, "/api/admin/ban_user")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/warn_user', methods=['POST'])
+def api_warn_user():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    user_id = data.get('user_id')
+    
+    if not user_id: return jsonify({'error': 'Missing user_id'}), 400
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get current warnings
+        db.execute_query(cursor, 'SELECT warnings FROM users WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+             conn.close()
+             return jsonify({'error': 'User not found'}), 404
+             
+        current_warnings = (row['warnings'] or 0) + 1
+        message = f"Предупреждение выдано ({current_warnings}/3)"
+        
+        # Check if limit reached
+        if current_warnings >= 3:
+            # Reset warnings and ban for 1 hour
+            import time
+            ban_expiration = int(time.time()) + 3600
+            db.execute_query(cursor, 'UPDATE users SET warnings = 0, is_banned = 1, ban_expiration = ? WHERE user_id = ?', (ban_expiration, user_id))
+            message = "Игрок получил 3-е предупреждение и был забанен на 1 час!"
+        else:
+            db.execute_query(cursor, 'UPDATE users SET warnings = ? WHERE user_id = ?', (current_warnings, user_id))
+            
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': message, 'warnings': current_warnings})
+    except Exception as e:
+        log_error(e, "/api/admin/warn_user")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/set_role', methods=['POST'])
+def api_admin_set_role():
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    data = request.get_json()
+    user_id = data.get('user_id')
+    role = data.get('role') # 'admin' or 'user'
+    
+    if not user_id or role not in ['admin', 'user']:
+        return jsonify({'error': 'Invalid data'}), 400
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_admin = 1 if role == 'admin' else 0
+        db.execute_query(cursor, 'UPDATE users SET is_admin = ? WHERE user_id = ?', (is_admin, user_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'is_admin': is_admin})
+    except Exception as e:
+        log_error(e, "/api/admin/set_role")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
